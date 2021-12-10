@@ -53,7 +53,7 @@ public class RetryFunction {
 
 	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
 			.builder().build();
-	private static StreamAdminClient streamAdminClient = null;
+	private StreamAdminClient streamAdminClient = null;
 	private Map<String, String> errorStreamMapping = new HashMap<>();
 	private SecretsClient secretsClient = null;
 
@@ -83,8 +83,8 @@ public class RetryFunction {
 
 		String cursor = getSourceStreamCursor();
 
-		long latestOffset = readMessagesFromSourceStream(cursor);
-		return latestOffset;
+		return readMessagesFromSourceStream(cursor);
+
 	}
 
 	/**
@@ -93,7 +93,7 @@ public class RetryFunction {
 	 * @throws JsonProcessingException
 	 * 
 	 */
-	private void parseRequestBody(String requestBody) throws JsonMappingException, JsonProcessingException {
+	private void parseRequestBody(String requestBody) throws JsonProcessingException {
 
 		ObjectMapper mapper = new ObjectMapper();
 		JsonNode jsonNode = mapper.readTree(requestBody);
@@ -119,7 +119,7 @@ public class RetryFunction {
 	 * 
 	 *         This method obtains the Stream object from the stream OCID.
 	 */
-	private static Stream getStream(String streamOCID) {
+	private Stream getStream(String streamOCID) {
 		GetStreamResponse getResponse = streamAdminClient
 				.getStream(GetStreamRequest.builder().streamId(streamOCID).build());
 		return getResponse.getStream();
@@ -199,7 +199,7 @@ public class RetryFunction {
 		String data = null;
 
 		HttpRequest request = null;
-		int responseStatusCode = 500;
+		int responseStatusCode;
 		ObjectMapper objectMapper = new ObjectMapper();
 
 		JsonNode jsonNode = objectMapper.readTree(messageValue);
@@ -217,6 +217,7 @@ public class RetryFunction {
 
 		}
 		String authToken = getSecretFromVault(messageUniqueId);
+		String authorizationHeaderName = "Authorization";
 
 		switch (operation) {
 
@@ -225,7 +226,7 @@ public class RetryFunction {
 					.uri(URI.create(url));
 
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			builder.header("Authorization", authToken);
+			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
 			break;
 
@@ -237,7 +238,7 @@ public class RetryFunction {
 					.uri(URI.create(url));
 
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			builder.header("Authorization", authToken);
+			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
 			break;
 		}
@@ -246,7 +247,7 @@ public class RetryFunction {
 			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(url));
 
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			builder.header("Authorization", authToken);
+			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
 		}
 		}
@@ -256,11 +257,11 @@ public class RetryFunction {
 		response = httpClient.send(request, BodyHandlers.ofInputStream());
 
 		responseStatusCode = response.statusCode();
+		// Get the error stream OCID mapped to the REST response error code
 
 		if (errorStreamMapping.containsKey(String.valueOf(responseStatusCode))) {
 
-			populateErrorStream(messageValue, messageKey,
-					(String) errorStreamMapping.get(String.valueOf(responseStatusCode)));
+			populateErrorStream(messageValue, messageKey, errorStreamMapping.get(String.valueOf(responseStatusCode)));
 
 		}
 
@@ -288,7 +289,6 @@ public class RetryFunction {
 				.getSecretBundle().getSecretBundleContent();
 
 		String secret = base64SecretBundleContentDetails.getContent();
-		LOGGER.info("secret" + secret);
 
 		return secret;
 

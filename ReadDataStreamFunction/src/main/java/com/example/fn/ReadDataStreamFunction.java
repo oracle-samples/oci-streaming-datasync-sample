@@ -42,7 +42,7 @@ public class ReadDataStreamFunction {
 
 	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
 			.builder().build();
-	private static StreamAdminClient streamAdminClient = null;
+	private StreamAdminClient streamAdminClient = null;
 
 	public ReadDataStreamFunction() {
 
@@ -117,18 +117,17 @@ public class ReadDataStreamFunction {
 		}
 
 		String authToken = getSecretFromVault(messageUniqueId);
+		String authorizationHeaderName = "Authorization";
 
 		switch (operation) {
 
 		case "PUT": {
-
 			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			builder.header("Authorization", authToken);
+			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
-
 			break;
 
 		}
@@ -139,9 +138,8 @@ public class ReadDataStreamFunction {
 					.uri(URI.create(url));
 
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			builder.header("Authorization", authToken);
+			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
-
 			break;
 		}
 
@@ -149,9 +147,8 @@ public class ReadDataStreamFunction {
 			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(url));
 
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			builder.header("Authorization", authToken);
+			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
-
 		}
 		}
 
@@ -159,7 +156,7 @@ public class ReadDataStreamFunction {
 
 		responseStatusCode = response.statusCode();
 
-		String errorStreamOCID = System.getenv().get("_" + String.valueOf(responseStatusCode));
+		String errorStreamOCID = System.getenv().get("_" + responseStatusCode);
 		Stream errorStream = getStream(errorStreamOCID);
 		populateErrorStream(messageValue, messageKey, errorStream, errorStreamOCID);
 
@@ -187,7 +184,6 @@ public class ReadDataStreamFunction {
 				.getSecretBundle().getSecretBundleContent();
 
 		String secret = base64SecretBundleContentDetails.getContent();
-		LOGGER.info("secret" + secret);
 
 		return secret;
 
@@ -197,7 +193,7 @@ public class ReadDataStreamFunction {
 	 * @param streamOCID
 	 * @return Stream This method obtains the Stream object from the stream OCID.
 	 */
-	private static Stream getStream(String streamOCID) {
+	private Stream getStream(String streamOCID) {
 		GetStreamResponse getResponse = streamAdminClient
 				.getStream(GetStreamRequest.builder().streamId(streamOCID).build());
 		return getResponse.getStream();
@@ -221,7 +217,6 @@ public class ReadDataStreamFunction {
 
 		PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(errorStreamOCID)
 				.putMessagesDetails(messagesDetails).build();
-		LOGGER.info("put message in" + errorStreamOCID);
 
 		PutMessagesResponse putResponse = StreamClient.builder().stream(errorStream).build(provider)
 				.putMessages(putRequest);
