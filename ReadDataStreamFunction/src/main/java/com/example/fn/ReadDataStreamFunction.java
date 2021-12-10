@@ -71,27 +71,27 @@ public class ReadDataStreamFunction {
 		for (int i = 0; i < jsonTree.size(); i++) {
 			JsonNode jsonNode = jsonTree.get(i);
 
-			String messageKey = jsonNode.get("key").asText();
-			String messageValue = jsonNode.get("value").asText();
+			String streamKey = jsonNode.get("key").asText();
+			String streamMessage = jsonNode.get("value").asText();
 
-			String decodedMessageValue = new String(Base64.getDecoder().decode(messageValue.getBytes()));
+			String decodedMessageValue = new String(Base64.getDecoder().decode(streamMessage.getBytes()));
 			LOGGER.info(decodedMessageValue);
 
-			processMessage(decodedMessageValue, messageKey);
+			processMessage(decodedMessageValue, streamKey);
 
 		}
 
 	}
 
 	/**
-	 * @param messageValue
-	 * @param messageKey
+	 * @param streamMessage
+	 * @param streamKey
 	 * @throws IOException
 	 * @throws InterruptedException This method parses the incoming message and
 	 *                              processes it based on the operation defined in
 	 *                              the message
 	 */
-	private void processMessage(String messageValue, String messageKey) throws IOException, InterruptedException {
+	private void processMessage(String streamMessage, String streamKey) throws IOException, InterruptedException {
 
 		String data = "";
 
@@ -99,7 +99,7 @@ public class ReadDataStreamFunction {
 		int responseStatusCode = 0;
 		ObjectMapper objectMapper = new ObjectMapper();
 
-		JsonNode jsonNode = objectMapper.readTree(messageValue);
+		JsonNode jsonNode = objectMapper.readTree(streamMessage);
 		String messageUniqueId = jsonNode.get("uniqueId").asText();
 		String url = jsonNode.get("url").asText();
 		String operation = jsonNode.get("operation").asText();
@@ -158,7 +158,7 @@ public class ReadDataStreamFunction {
 
 		String errorStreamOCID = System.getenv().get("_" + responseStatusCode);
 		Stream errorStream = getStream(errorStreamOCID);
-		populateErrorStream(messageValue, messageKey, errorStream, errorStreamOCID);
+		populateErrorStream(streamMessage, streamKey, errorStream, errorStreamOCID);
 
 	}
 
@@ -200,19 +200,19 @@ public class ReadDataStreamFunction {
 	}
 
 	/**
-	 * @param messageValue
-	 * @param messageKey
+	 * @param streamMessage
+	 * @param streamKey
 	 * @param errorStream
 	 * @param errorStreamOCID
 	 * 
 	 *                        This method is used to populate the error stream with
 	 *                        the failed message
 	 */
-	private void populateErrorStream(String messageValue, String messageKey, Stream errorStream,
+	private void populateErrorStream(String streamMessage, String streamKey, Stream errorStream,
 			String errorStreamOCID) {
 
 		PutMessagesDetails messagesDetails = PutMessagesDetails.builder().messages(Arrays.asList(
-				PutMessagesDetailsEntry.builder().key(messageKey.getBytes()).value(messageValue.getBytes()).build()))
+				PutMessagesDetailsEntry.builder().key(streamKey.getBytes()).value(streamMessage.getBytes()).build()))
 				.build();
 
 		PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(errorStreamOCID)

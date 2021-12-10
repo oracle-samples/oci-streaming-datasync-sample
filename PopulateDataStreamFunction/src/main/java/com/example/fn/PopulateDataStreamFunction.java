@@ -1,6 +1,7 @@
 package com.example.fn;
 
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 import org.apache.commons.lang3.StringUtils;
@@ -35,11 +36,11 @@ public class PopulateDataStreamFunction {
 	private static final String VAULT_OCID = System.getenv().get("vault_ocid");
 	private static final String VAULT_COMPARTMENT_OCID = System.getenv().get("vault_compartment_ocid");
 	private static final String VAULT_KEY_OCID = System.getenv().get("vault_key_ocid");
-	private static StreamAdminClient streamAdminClient = null;
+	private StreamAdminClient streamAdminClient = null;
 	private StreamClient streamClient = null;
 	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
 			.builder().build();
-	private String streamOCID, messageKey, messageValue, messageUniqueId = "";
+	private String streamKey, streamMessage, messageUniqueId = "";
 	private VaultsClient vaultClient = null;
 
 	public PopulateDataStreamFunction() {
@@ -70,8 +71,10 @@ public class PopulateDataStreamFunction {
 		// This will be stored in a vault
 		Headers headers = httpGatewayContext.getHeaders();
 		String authorizarionHeader = headers.get("Authorization").get();
-		if (queryparams.get("streamOCID").isPresent()) {
-			streamOCID = queryparams.get("streamOCID").get();
+		Optional<String> streamOCID = queryparams.get("streamOCID");
+		String streamOCIDValue = "";
+		if (streamOCID.isPresent()) {
+			streamOCIDValue = streamOCID.get();
 		}
 		// Store the authorization header in a vault
 		String secretOcid = createSecretInVault(authorizarionHeader);
@@ -82,16 +85,16 @@ public class PopulateDataStreamFunction {
 		// Every message will have a uniqueid to use as the name of the secret. This
 		// is replaced by the secret's OCID
 
-		String messageUpdatedWithSecretOCID = messageValue.replaceAll(messageUniqueId, secretOcid);
+		String messageUpdatedWithSecretOCID = streamMessage.replaceAll(messageUniqueId, secretOcid);
 
-		stream = getStream(streamOCID);
+		stream = getStream(streamOCIDValue);
 		streamClient = StreamClient.builder().stream(stream).build(provider);
 
 		// Put the message to the stream
 
 		PutMessagesDetails messagesDetails = PutMessagesDetails.builder().messages(Arrays.asList(PutMessagesDetailsEntry
-				.builder().key(messageKey.getBytes()).value(messageUpdatedWithSecretOCID.getBytes()).build())).build();
-		PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(streamOCID)
+				.builder().key(streamKey.getBytes()).value(messageUpdatedWithSecretOCID.getBytes()).build())).build();
+		PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(streamOCIDValue)
 				.putMessagesDetails(messagesDetails).build();
 		PutMessagesResponse putResponse = streamClient.putMessages(putRequest);
 		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
@@ -124,21 +127,21 @@ public class PopulateDataStreamFunction {
 	 *                                 obtains the unique id of the message from the
 	 *                                 message value
 	 */
-	private void parseRequestBody(String requestBody) throws JsonMappingException, JsonProcessingException {
+	private void parseRequestBody(String requestBody) throws JsonProcessingException {
 
 		ObjectMapper objectMapper = new ObjectMapper();
 		JsonNode jsonNode = objectMapper.readTree(requestBody);
 
 		// Get the message key and the actual content to be stored in the stream.
-		// messageKey will be used as the stream message's key
+		// streamKey will be used as the stream message's key
 
-		messageKey = jsonNode.path("messageKey").asText();
+		streamKey = jsonNode.path("streamKey").asText();
 
-		messageValue = jsonNode.path("messageValue").toString();
-		// To get the uniqueid from messageValue
-		JsonNode messageValueNode = objectMapper.readTree(messageValue);
+		streamMessage = jsonNode.path("streamMessage").toString();
+		// To get the uniqueid from streamMessage
+		JsonNode streamMessageNode = objectMapper.readTree(streamMessage);
 
-		messageUniqueId = messageValueNode.get("uniqueId").asText();
+		messageUniqueId = streamMessageNode.get("uniqueId").asText();
 
 	}
 
@@ -146,7 +149,7 @@ public class PopulateDataStreamFunction {
 	 * @param streamOCID
 	 * @return Stream This method obtains the Stream object from the stream OCID.
 	 */
-	private static Stream getStream(String streamOCID) {
+	private Stream getStream(String streamOCID) {
 		GetStreamResponse getResponse = streamAdminClient
 				.getStream(GetStreamRequest.builder().streamId(streamOCID).build());
 		return getResponse.getStream();
@@ -185,8 +188,7 @@ public class PopulateDataStreamFunction {
 
 		// After the secret is created get its OCID as this value is needed by other
 		// functions to read the secret
-		String secretOCID = createSecretResponse.getSecret().getId();
+		return createSecretResponse.getSecret().getId();
 
-		return secretOCID;
 	}
 }

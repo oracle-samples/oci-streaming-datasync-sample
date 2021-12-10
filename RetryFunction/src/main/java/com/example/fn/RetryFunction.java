@@ -184,8 +184,8 @@ public class RetryFunction {
 	}
 
 	/**
-	 * @param messageValue
-	 * @param messageKey
+	 * @param streamMessage
+	 * @param streamKey
 	 * @throws IOException
 	 * @throws InterruptedException
 	 * 
@@ -194,7 +194,7 @@ public class RetryFunction {
 	 *                              the message
 	 */
 
-	private void processMessage(String messageValue, String messageKey) throws IOException, InterruptedException {
+	private void processMessage(String streamMessage, String streamKey) throws IOException, InterruptedException {
 
 		String data = null;
 
@@ -202,7 +202,7 @@ public class RetryFunction {
 		int responseStatusCode;
 		ObjectMapper objectMapper = new ObjectMapper();
 
-		JsonNode jsonNode = objectMapper.readTree(messageValue);
+		JsonNode jsonNode = objectMapper.readTree(streamMessage);
 
 		String url = jsonNode.get("url").asText();
 		String operation = jsonNode.get("operation").asText();
@@ -261,7 +261,7 @@ public class RetryFunction {
 
 		if (errorStreamMapping.containsKey(String.valueOf(responseStatusCode))) {
 
-			populateErrorStream(messageValue, messageKey, errorStreamMapping.get(String.valueOf(responseStatusCode)));
+			populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf(responseStatusCode)));
 
 		}
 
@@ -295,18 +295,18 @@ public class RetryFunction {
 	}
 
 	/**
-	 * @param messageValue
-	 * @param messageKey
+	 * @param streamMessage
+	 * @param streamKey
 	 * @param errorStreamOCID
 	 * 
 	 *                        This method is used to populate the error stream with
 	 *                        the failed message
 	 *
 	 */
-	private void populateErrorStream(String messageValue, String messageKey, String errorStreamOCID) {
+	private void populateErrorStream(String streamMessage, String streamKey, String errorStreamOCID) {
 
 		PutMessagesDetails messagesDetails = PutMessagesDetails.builder().messages(Arrays.asList(
-				PutMessagesDetailsEntry.builder().key(messageKey.getBytes()).value(messageValue.getBytes()).build()))
+				PutMessagesDetailsEntry.builder().key(streamKey.getBytes()).value(streamMessage.getBytes()).build()))
 				.build();
 
 		PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(errorStreamOCID)
