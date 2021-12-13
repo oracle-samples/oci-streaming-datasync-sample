@@ -203,11 +203,12 @@ public class RetryFunction {
 		ObjectMapper objectMapper = new ObjectMapper();
 
 		JsonNode jsonNode = objectMapper.readTree(streamMessage);
-
+		// parse the streammessage section of the json payload
 		String url = jsonNode.get("url").asText();
 		String operation = jsonNode.get("operation").asText();
 		String messageUniqueId = jsonNode.get("uniqueId").asText();
 		data = jsonNode.get("data").toString();
+		// Get the headers section of the json payload
 		JsonNode headersNode = jsonNode.get("headers");
 		Map<String, String> httpHeaders = new HashMap<>();
 
@@ -216,6 +217,7 @@ public class RetryFunction {
 			httpHeaders.put(headerNode.get("key").asText(), headerNode.get("value").asText());
 
 		}
+		// Read the Vault to get the auth token
 		String authToken = getSecretFromVault(messageUniqueId);
 		String authorizationHeaderName = "Authorization";
 
@@ -225,7 +227,10 @@ public class RetryFunction {
 			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
+			// add headers to the request
+
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
+			// add authorization token to the request
 			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
 			break;
@@ -237,7 +242,10 @@ public class RetryFunction {
 			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
+			// add headers to the request
+
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
+			// add authorization token to the request
 			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
 			break;
@@ -245,8 +253,10 @@ public class RetryFunction {
 
 		case "DELETE": {
 			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(url));
+			// add headers to the request
 
 			httpHeaders.forEach((k, v) -> builder.header(k, v));
+			// add authorization token to the request
 			builder.header(authorizationHeaderName, authToken);
 			request = builder.build();
 		}
@@ -260,7 +270,8 @@ public class RetryFunction {
 		// Get the error stream OCID mapped to the REST response error code
 
 		if (errorStreamMapping.containsKey(String.valueOf(responseStatusCode))) {
-
+			// move the message to an error stream if a stream corresponding to response
+			// status is defined
 			populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf(responseStatusCode)));
 
 		}
@@ -305,12 +316,15 @@ public class RetryFunction {
 	 */
 	private void populateErrorStream(String streamMessage, String streamKey, String errorStreamOCID) {
 
+		// Construct the stream message
+
 		PutMessagesDetails messagesDetails = PutMessagesDetails.builder().messages(Arrays.asList(
 				PutMessagesDetailsEntry.builder().key(streamKey.getBytes()).value(streamMessage.getBytes()).build()))
 				.build();
 
 		PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(errorStreamOCID)
 				.putMessagesDetails(messagesDetails).build();
+		// Read the response
 
 		PutMessagesResponse putResponse = StreamClient.builder().stream(getStream(errorStreamOCID)).build(provider)
 				.putMessages(putRequest);
