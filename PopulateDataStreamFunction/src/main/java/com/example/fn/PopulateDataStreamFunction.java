@@ -76,11 +76,11 @@ public class PopulateDataStreamFunction {
 		if (streamOCID.isPresent()) {
 			streamOCIDValue = streamOCID.get();
 		}
-		// Store the authorization header in a vault
-		String secretOcid = createSecretInVault(authorizarionHeader);
 
 		// parse the request body to get the message's key and value.
 		parseRequestBody(requestBody);
+		// Store the authorization header in a vault
+		String secretOcid = createSecretInVault(authorizarionHeader);
 
 		// Every message will have a uniqueid to use as the name of the secret. This
 		// is replaced by the secret's OCID
@@ -140,8 +140,10 @@ public class PopulateDataStreamFunction {
 		streamMessage = jsonNode.path("streamMessage").toString();
 		// To get the uniqueid from streamMessage
 		JsonNode streamMessageNode = objectMapper.readTree(streamMessage);
+		LOGGER.info("message unique id**" + streamMessage.toString());
 
 		messageUniqueId = streamMessageNode.get("uniqueId").asText();
+		LOGGER.info("message unique id**" + messageUniqueId);
 
 	}
 
@@ -175,7 +177,7 @@ public class PopulateDataStreamFunction {
 		Base64SecretContentDetails base64SecretContentDetails = Base64SecretContentDetails.builder()
 				.content(authorizationHeader).name("secretcontent" + messageUniqueId)
 				.stage(SecretContentDetails.Stage.Current).build();
-
+		LOGGER.info("message unique id" + messageUniqueId);
 		// The secret is created in the compartment and vault specified in application
 		// configuration variable
 		// The secret uses the key mentioned in the application configuration variable

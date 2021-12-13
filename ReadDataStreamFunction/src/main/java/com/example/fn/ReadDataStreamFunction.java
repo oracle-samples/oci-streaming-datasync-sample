@@ -64,6 +64,7 @@ public class ReadDataStreamFunction {
 	public void handleRequest(String incomingMessage) throws IOException, InterruptedException {
 
 		ObjectMapper objectMapper = new ObjectMapper();
+		LOGGER.info(incomingMessage);
 
 		JsonNode jsonTree = objectMapper.readTree(incomingMessage);
 
