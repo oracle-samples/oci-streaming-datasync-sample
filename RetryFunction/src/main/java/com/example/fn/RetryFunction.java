@@ -217,9 +217,6 @@ public class RetryFunction {
 			httpHeaders.put(headerNode.get("key").asText(), headerNode.get("value").asText());
 
 		}
-		// Read the Vault to get the auth token
-		String authToken = getSecretFromVault(messageUniqueId);
-		String authorizationHeaderName = "Authorization";
 
 		switch (operation) {
 
@@ -227,12 +224,7 @@ public class RetryFunction {
 			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
-			// add headers to the request
-
-			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			// add authorization token to the request
-			builder.header(authorizationHeaderName, authToken);
-			request = builder.build();
+			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
 			break;
 
 		}
@@ -242,23 +234,14 @@ public class RetryFunction {
 			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
-			// add headers to the request
-
-			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			// add authorization token to the request
-			builder.header(authorizationHeaderName, authToken);
-			request = builder.build();
+			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
 			break;
 		}
 
 		case "DELETE": {
 			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(url));
 			// add headers to the request
-
-			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			// add authorization token to the request
-			builder.header(authorizationHeaderName, authToken);
-			request = builder.build();
+			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
 		}
 		}
 
@@ -276,6 +259,28 @@ public class RetryFunction {
 
 		}
 
+	}
+
+	/**
+	 * @param builder
+	 * @param httpHeaders
+	 * @param messageUniqueId
+	 * @return HttpRequest
+	 * 
+	 *         This method constructs http request
+	 */
+	private HttpRequest constructHttpRequest(Builder builder, Map<String, String> httpHeaders, String messageUniqueId) {
+
+		String authorizationHeaderName = "Authorization";
+		// Read the Vault to get the auth token
+		String authToken = getSecretFromVault(messageUniqueId);
+		// add headers to the request
+
+		httpHeaders.forEach((k, v) -> builder.header(k, v));
+		// add authorization token to the request
+		builder.header(authorizationHeaderName, authToken);
+		HttpRequest request = builder.build();
+		return request;
 	}
 
 	/**
