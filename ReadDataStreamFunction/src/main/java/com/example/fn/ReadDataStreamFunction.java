@@ -71,8 +71,8 @@ public class ReadDataStreamFunction {
 		for (int i = 0; i < jsonTree.size(); i++) {
 			JsonNode jsonNode = jsonTree.get(i);
 
-			String streamKey = jsonNode.get("streamKey").asText();
-			String streamMessage = jsonNode.get("streamMessage").asText();
+			String streamKey = jsonNode.get("key").asText();
+			String streamMessage = jsonNode.get("value").asText();
 
 			String decodedMessageValue = new String(Base64.getDecoder().decode(streamMessage.getBytes()));
 			LOGGER.info(decodedMessageValue);
@@ -95,10 +95,9 @@ public class ReadDataStreamFunction {
 
 		String data = "";
 
-		HttpRequest request = null;
 		int responseStatusCode = 0;
 		ObjectMapper objectMapper = new ObjectMapper();
-
+		HttpRequest request = null;
 		JsonNode jsonNode = objectMapper.readTree(streamMessage);
 		// parse the streammessage section of the json payload
 		String messageUniqueId = jsonNode.get("uniqueId").asText();
@@ -117,9 +116,6 @@ public class ReadDataStreamFunction {
 			httpHeaders.put(headerNode.get("key").asText(), headerNode.get("value").asText());
 
 		}
-		// Read the Vault to get the auth token
-		String authToken = getSecretFromVault(messageUniqueId);
-		String authorizationHeaderName = "Authorization";
 
 		switch (operation) {
 
@@ -127,12 +123,7 @@ public class ReadDataStreamFunction {
 			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
-			// add headers to the request
-
-			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			// add authorization token to the request
-			builder.header(authorizationHeaderName, authToken);
-			request = builder.build();
+			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
 			break;
 
 		}
@@ -142,41 +133,56 @@ public class ReadDataStreamFunction {
 			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
-			// add headers to the request
-
-			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			// add authorization token to the request
-			builder.header(authorizationHeaderName, authToken);
-			request = builder.build();
+			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
 			break;
 		}
 
 		case "DELETE": {
 			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(url));
 
-			// add headers to the request
-
-			httpHeaders.forEach((k, v) -> builder.header(k, v));
-			// add authorization token to the request
-			builder.header(authorizationHeaderName, authToken);
-			request = builder.build();
+			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
 		}
 		}
 
-		// make the http request
+		// make the http request call
 
 		HttpResponse<InputStream> response = httpClient.send(request, BodyHandlers.ofInputStream());
 		// get the status code
 		responseStatusCode = response.statusCode();
+		LOGGER.info("responseStatusCode" + responseStatusCode);
 
 		// Get the error stream OCID mapped to the REST response error code
 
 		String errorStreamOCID = System.getenv().get("_" + responseStatusCode);
-		Stream errorStream = getStream(errorStreamOCID);
-		// move the message to an error stream if a stream corresponding to response
-		// status is defined
-		populateErrorStream(streamMessage, streamKey, errorStream, errorStreamOCID);
+		if (errorStreamOCID != null) {
+			Stream errorStream = getStream(errorStreamOCID);
+			// move the message to an error stream if a stream corresponding to response
+			// status is defined
+			populateErrorStream(streamMessage, streamKey, errorStream, errorStreamOCID);
+		}
 
+	}
+
+	/**
+	 * @param builder
+	 * @param httpHeaders
+	 * @param messageUniqueId
+	 * @return HttpRequest
+	 * 
+	 *         This method constructs http request
+	 */
+	private HttpRequest constructHttpRequest(Builder builder, Map<String, String> httpHeaders, String messageUniqueId) {
+
+		String authorizationHeaderName = "Authorization";
+		// Read the Vault to get the auth token
+		String authToken = getSecretFromVault(messageUniqueId);
+		// add headers to the request
+
+		httpHeaders.forEach((k, v) -> builder.header(k, v));
+		// add authorization token to the request
+		builder.header(authorizationHeaderName, authToken);
+		HttpRequest request = builder.build();
+		return request;
 	}
 
 	/**
