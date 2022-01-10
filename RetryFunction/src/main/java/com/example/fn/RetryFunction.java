@@ -207,7 +207,7 @@ public class RetryFunction {
 		// parse the streammessage section of the json payload
 		String url = jsonNode.get("url").asText();
 		String operation = jsonNode.get("operation").asText();
-		String messageUniqueId = jsonNode.get("uniqueId").asText();
+		String vaultSecretId = jsonNode.get("vaultSecretId").asText();
 		data = jsonNode.get("data").toString();
 		// Get the headers section of the json payload
 		JsonNode headersNode = jsonNode.get("headers");
@@ -225,7 +225,7 @@ public class RetryFunction {
 			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
-			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
+			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 			break;
 
 		}
@@ -235,14 +235,14 @@ public class RetryFunction {
 			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(data))
 					.uri(URI.create(url));
 
-			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
+			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 			break;
 		}
 
 		case "DELETE": {
 			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(url));
 			// add headers to the request
-			request = constructHttpRequest(builder, httpHeaders, messageUniqueId);
+			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 		}
 		}
 
@@ -267,16 +267,16 @@ public class RetryFunction {
 	/**
 	 * @param builder
 	 * @param httpHeaders
-	 * @param messageUniqueId
+	 * @param vaultSecretId
 	 * @return HttpRequest
 	 * 
 	 *         This method constructs http request
 	 */
-	private HttpRequest constructHttpRequest(Builder builder, Map<String, String> httpHeaders, String messageUniqueId) {
+	private HttpRequest constructHttpRequest(Builder builder, Map<String, String> httpHeaders, String vaultSecretId) {
 
 		String authorizationHeaderName = "Authorization";
 		// Read the Vault to get the auth token
-		String authToken = getSecretFromVault(messageUniqueId);
+		String authToken = getSecretFromVault(vaultSecretId);
 		// add headers to the request
 
 		httpHeaders.forEach((k, v) -> builder.header(k, v));
@@ -287,18 +287,18 @@ public class RetryFunction {
 	}
 
 	/**
-	 * @param messageUniqueId
+	 * @param vaultSecretId
 	 * @return String
 	 * 
 	 *         This method is used to get the auth token from the vault. The secret
-	 *         OCID is present in the message as the uniqueid and it is used for
+	 *         OCID is present in the message as the vaultSecretId and it is used for
 	 *         getting the secret content
 	 */
-	private String getSecretFromVault(String messageUniqueId) {
+	private String getSecretFromVault(String vaultSecretId) {
 
 		GetSecretBundleRequest getSecretBundleRequest = GetSecretBundleRequest.builder()
 
-				.secretId(messageUniqueId).stage(GetSecretBundleRequest.Stage.Current).build();
+				.secretId(vaultSecretId).stage(GetSecretBundleRequest.Stage.Current).build();
 
 		// get the secret
 		GetSecretBundleResponse getSecretBundleResponse = secretsClient.getSecretBundle(getSecretBundleRequest);

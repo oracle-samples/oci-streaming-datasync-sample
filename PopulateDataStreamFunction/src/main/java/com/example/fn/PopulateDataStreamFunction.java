@@ -33,15 +33,16 @@ import com.oracle.bmc.vault.responses.CreateSecretResponse;
 
 public class PopulateDataStreamFunction {
 	private static final Logger LOGGER = Logger.getLogger(PopulateDataStreamFunction.class.getName());
+	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
+			.builder().build();
 	private static final String VAULT_OCID = System.getenv().get("vault_ocid");
 	private static final String VAULT_COMPARTMENT_OCID = System.getenv().get("vault_compartment_ocid");
 	private static final String VAULT_KEY_OCID = System.getenv().get("vault_key_ocid");
 	private StreamAdminClient streamAdminClient = null;
 	private StreamClient streamClient = null;
-	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
-			.builder().build();
-	private String streamKey, streamMessage, messageUniqueId = "";
-	private VaultsClient vaultClient = null;
+	private VaultsClient vaultClient = null;	
+	private String streamKey, streamMessage, vaultSecretId = "";
+	
 
 	public PopulateDataStreamFunction() {
 
@@ -63,7 +64,7 @@ public class PopulateDataStreamFunction {
 	public void handleRequest(HTTPGatewayContext httpGatewayContext, String requestBody)
 			throws JsonMappingException, JsonProcessingException {
 
-		String result = null;
+		
 		Stream stream = null;
 
 		QueryParameters queryparams = httpGatewayContext.getQueryParameters();
@@ -71,6 +72,8 @@ public class PopulateDataStreamFunction {
 		// This will be stored in a vault
 		Headers headers = httpGatewayContext.getHeaders();
 		String authorizarionHeader = headers.get("Authorization").get();
+		// This is the OCID of the stream to which data is populated.
+		
 		Optional<String> streamOCID = queryparams.get("streamOCID");
 		String streamOCIDValue = "";
 		if (streamOCID.isPresent()) {
@@ -82,38 +85,18 @@ public class PopulateDataStreamFunction {
 		// Store the authorization header in a vault
 		String secretOcid = createSecretInVault(authorizarionHeader);
 
-		// Every message will have a uniqueid to use as the name of the secret. This
-		// is replaced by the secret's OCID
+		// Every message will have a vaultSecretId to use as the name of the secret. vaultSecretId value in the message
+		// is replaced by the secret's OCID once the secret is created in Vault. This secret OCID is later used
+		//by other functions to get the secret content while processing the message.
 
-		String messageUpdatedWithSecretOCID = streamMessage.replaceAll(messageUniqueId, secretOcid);
-
+		String messageUpdatedWithSecretOCID = streamMessage.replaceAll(vaultSecretId, secretOcid);
+        //Get the Stream 
 		stream = getStream(streamOCIDValue);
 		streamClient = StreamClient.builder().stream(stream).build(provider);
 
-		// Put the message to the stream
+		//store message in Stream
 
-		PutMessagesDetails messagesDetails = PutMessagesDetails.builder().messages(Arrays.asList(PutMessagesDetailsEntry
-				.builder().key(streamKey.getBytes()).value(messageUpdatedWithSecretOCID.getBytes()).build())).build();
-		PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(streamOCIDValue)
-				.putMessagesDetails(messagesDetails).build();
-		PutMessagesResponse putResponse = streamClient.putMessages(putRequest);
-		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
-			if (entry.getError() != null) {
-				result = "Put message error " + entry.getErrorMessage();
-				LOGGER.info(result);
-			} else {
-				result = "Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition();
-				LOGGER.info(result);
-			}
-		}
-		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
-			if (StringUtils.isNotBlank(entry.getError())) {
-				LOGGER.info(String.format("Error: ", entry.getError(), entry.getErrorMessage()));
-			} else {
-				LOGGER.info(String.format("Published message to partition , offset .", entry.getPartition(),
-						entry.getOffset()));
-			}
-		}
+		storeMessageinStream(messageUpdatedWithSecretOCID,  streamOCIDValue) ;
 
 	}
 
@@ -138,10 +121,10 @@ public class PopulateDataStreamFunction {
 		streamKey = jsonNode.path("streamKey").asText();
 
 		streamMessage = jsonNode.path("streamMessage").toString();
-		// To get the uniqueid from streamMessage
+		// To get the vaultSecretId from streamMessage
 		JsonNode streamMessageNode = objectMapper.readTree(streamMessage);
 
-		messageUniqueId = streamMessageNode.get("uniqueId").asText();
+		vaultSecretId = streamMessageNode.get("vaultSecretId").asText();
 
 	}
 
@@ -160,27 +143,27 @@ public class PopulateDataStreamFunction {
 	 * @return String
 	 * 
 	 *         This method is to store the auth token in a vault. It generates a
-	 *         secret with content as auth token and name as the messageuniqueid.
+	 *         secret with content as auth token and name as the vaultSecretId.
 	 *         The secret is stored in the vault in the compartment specified in
 	 *         application configuration variables. The secret encryption key used
 	 *         is also specified in the application configuration variable. After
 	 *         the creation of the secret, the OCID of the newly created secret is
-	 *         returned. This OCID will replace the uniqueid of the message and
-	 *         later will be used for reading the secret content later by other
+	 *         returned. This OCID will replace the vaultSecretId of the message and
+	 *         later will be used for reading the secret content  by other
 	 *         functions.
 	 */
 	private String createSecretInVault(String authorizationHeader) {
 
-//Create a new secret with content as the authorization header value and name as messageuniqueid
+//Create a new secret with content as the authorization header value and name as vaultSecretId
 		Base64SecretContentDetails base64SecretContentDetails = Base64SecretContentDetails.builder()
-				.content(authorizationHeader).name("secretcontent" + messageUniqueId)
+				.content(authorizationHeader).name("secretcontent" + vaultSecretId)
 				.stage(SecretContentDetails.Stage.Current).build();
-		LOGGER.info("message unique id" + messageUniqueId);
+		LOGGER.info("message unique id" + vaultSecretId);
 		// The secret is created in the compartment and vault specified in application
 		// configuration variable
 		// The secret uses the key mentioned in the application configuration variable
 		CreateSecretDetails createSecretDetails = CreateSecretDetails.builder().compartmentId(VAULT_COMPARTMENT_OCID)
-				.secretName(messageUniqueId).keyId(VAULT_KEY_OCID).vaultId(VAULT_OCID)
+				.secretName(vaultSecretId).keyId(VAULT_KEY_OCID).vaultId(VAULT_OCID)
 				.secretContent(base64SecretContentDetails).build();
 		CreateSecretRequest createSecretRequest = CreateSecretRequest.builder().createSecretDetails(createSecretDetails)
 				.build();
@@ -190,5 +173,36 @@ public class PopulateDataStreamFunction {
 		// functions to read the secret
 		return createSecretResponse.getSecret().getId();
 
+	}
+	/**
+	 * @param message
+	 * @param streamOCID
+	 * This method stores the message in the Stream
+	 */
+	private void storeMessageinStream(String message, String streamOCID) {
+		String result = null;
+
+	PutMessagesDetails messagesDetails = PutMessagesDetails.builder().messages(Arrays.asList(PutMessagesDetailsEntry
+			.builder().key(streamKey.getBytes()).value(message.getBytes()).build())).build();
+	PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(streamOCID)
+			.putMessagesDetails(messagesDetails).build();
+	PutMessagesResponse putResponse = streamClient.putMessages(putRequest);
+	for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
+		if (entry.getError() != null) {
+			result = "Put message error " + entry.getErrorMessage();
+			LOGGER.info(result);
+		} else {
+			result = "Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition();
+			LOGGER.info(result);
+		}
+	}
+	for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
+		if (StringUtils.isNotBlank(entry.getError())) {
+			LOGGER.info(String.format("Error: ", entry.getError(), entry.getErrorMessage()));
+		} else {
+			LOGGER.info(String.format("Published message to partition , offset .", entry.getPartition(),
+					entry.getOffset()));
+		}
+	}
 	}
 }
