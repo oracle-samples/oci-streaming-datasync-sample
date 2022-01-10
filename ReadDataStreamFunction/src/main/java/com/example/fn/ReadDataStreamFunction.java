@@ -153,12 +153,20 @@ public class ReadDataStreamFunction {
 
 		// Get the error stream OCID mapped to the REST response error code
 
-		String errorStreamOCID = System.getenv().get("_" + responseStatusCode);
+		String errorStreamOCID = System.getenv().get("_" + responseStatusCode + "_error_stream_ocid");
+		
 		if (errorStreamOCID != null) {
 			Stream errorStream = getStream(errorStreamOCID);
 			// move the message to an error stream if a stream corresponding to response
 			// status is defined
 			populateErrorStream(streamMessage, streamKey, errorStream, errorStreamOCID);
+			LOGGER.info("Inside populate error stream" + errorStreamOCID);
+		} else {
+			String defaultErrorStreamOCID = System.getenv().get("default_error_stream_ocid");
+			Stream errorStream = getStream(defaultErrorStreamOCID);
+			populateErrorStream(streamMessage, streamKey, errorStream, defaultErrorStreamOCID);
+			LOGGER.info("Inside populate default error stream" + defaultErrorStreamOCID);
+
 		}
 
 	}
