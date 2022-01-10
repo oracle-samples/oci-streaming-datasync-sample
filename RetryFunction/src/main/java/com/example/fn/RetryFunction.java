@@ -48,7 +48,7 @@ public class RetryFunction {
 
 	private StreamClient streamClient = null;
 
-	private String sourceStreamOCID, readPartition = "";
+	private String streamOCIDToRetry, readPartition = "";
 	private long readOffset;
 
 	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
@@ -77,9 +77,9 @@ public class RetryFunction {
 
 		parseRequestBody(requestBody);
 
-		Stream sourceStream = getStream(sourceStreamOCID);
+		Stream retryStream = getStream(streamOCIDToRetry);
 
-		streamClient = StreamClient.builder().stream(sourceStream).build(provider);
+		streamClient = StreamClient.builder().stream(retryStream).build(provider);
 
 		String cursor = getSourceStreamCursor();
 
@@ -98,7 +98,8 @@ public class RetryFunction {
 		ObjectMapper mapper = new ObjectMapper();
 		JsonNode jsonNode = mapper.readTree(requestBody);
 
-		sourceStreamOCID = jsonNode.path("sourceStreamOCID").asText();
+		streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
+		LOGGER.info("streamOCIDToRetry"+streamOCIDToRetry);
 
 		readOffset = jsonNode.path("readOffset").asLong();
 		readPartition = jsonNode.path("readPartition").asText();
@@ -135,7 +136,7 @@ public class RetryFunction {
 		CreateCursorDetails cursorDetails = CreateCursorDetails.builder().partition(readPartition).type(Type.AtOffset)
 				.offset(readOffset).build();
 
-		CreateCursorRequest createCursorRequest = CreateCursorRequest.builder().streamId(sourceStreamOCID)
+		CreateCursorRequest createCursorRequest = CreateCursorRequest.builder().streamId(streamOCIDToRetry)
 				.createCursorDetails(cursorDetails).build();
 
 		CreateCursorResponse cursorResponse = streamClient.createCursor(createCursorRequest);
@@ -160,8 +161,8 @@ public class RetryFunction {
 		// limit parameter
 		// to specify any value up to 10,000, but consider your average message size to
 		// avoid exceeding throughput on the stream.
-		GetMessagesRequest getRequest = GetMessagesRequest.builder().streamId(sourceStreamOCID).cursor(cursor).limit(10)
-				.build();
+		GetMessagesRequest getRequest = GetMessagesRequest.builder().streamId(streamOCIDToRetry).cursor(cursor)
+				.limit(10).build();
 
 		GetMessagesResponse getResponse = streamClient.getMessages(getRequest);
 
@@ -257,6 +258,8 @@ public class RetryFunction {
 			// status is defined
 			populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf(responseStatusCode)));
 
+		} else {
+			populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf("unmapped")));
 		}
 
 	}
