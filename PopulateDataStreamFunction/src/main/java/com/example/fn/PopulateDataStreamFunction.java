@@ -140,10 +140,8 @@ public class PopulateDataStreamFunction {
 		streamMessage = jsonNode.path("streamMessage").toString();
 		// To get the uniqueid from streamMessage
 		JsonNode streamMessageNode = objectMapper.readTree(streamMessage);
-		LOGGER.info("message unique id**" + streamMessage.toString());
 
 		messageUniqueId = streamMessageNode.get("uniqueId").asText();
-		LOGGER.info("message unique id**" + messageUniqueId);
 
 	}
 
