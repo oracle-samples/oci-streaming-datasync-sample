@@ -35,25 +35,34 @@ Choosing OCI Cloud Native Services as middle tier has the following benefits,
 _Streaming_
 
 There are 2 types of streams used.
-•	A stream for storing the posted data from the source application/s.  Let’s call it a Data Stream .
+•	A stream, DataSyncStream for storing the posted data from the source application/s.
 •	A stream or streams for storing errored data. Posting of data to target application/s can error out due to multiple reasons, like server unavailability, data inconsistency, error on the server side while processing and so forth. Some of these errors are recoverable, say an error occurred due to server unavailability is recoverable when server is available. Some of them would be unrecoverable, i.e. the processing of data will not be successful even after several retrials. It is important to categorize and re-process errored messages based on the error type to avoid data loss. In the sample code developed for this pattern, retrial is based on the REST API response code. Please note that, the error type and retrial decision is based on the business use case and using REST API response code may not be suitable for all business cases.
-The data will be moved from Data Stream  to Error streams based on the error type and classification. 
+The data will be moved from DataSyncStream  to Error streams based on the error type and classification. 
+
 
 _Functions_
 
-3 Functions are used in this pattern. 
+3 Functions are used in this pattern.
 
-•	PopulateDataStreamFunction → This Function is used to populate the DataStream. It is invoked when the Source Application/s post data to the REST API exposed using API Gateway. 
-•	ProcessDataStreamFunction → This Function reads the Data Stream  messages and calls the target application’s API. If there is a failure in target application API call, the messages are sent to Error Streams. The Error Streams to use are configurable at the Function Application level and the Function reads them from the Application configuration at run time. This gives additional flexibility in defining the error conditions and the streams to which messages are stored based on the business case. 
+•	PopulateDataStreamFunction → This Function is used to populate the DataSyncStream . It is invoked when the Source Application/s post data to the REST API exposed using API Gateway. 
+•	ProcessDataStreamFunction → This Function reads the DataSyncStream  messages and calls the target application’s API. If there is a failure in target application API call, the messages are sent to Error Streams. The Error Streams to use, are configurable at the Function Application level. This gives additional flexibility in defining the error conditions and the streams to which messages are pushed based on the business case. 
 •	RetryFunction → This Function retries the messages in Error Streams. This Function is exposed as a public API using an API Gateway. The exposed API can be invoked as a batch process or on an ad-hoc basis, to reprocess the failed messages in any Error Stream. 
 
+_Service Connector Hub_
+
+There are 3 types of Service Connectors used.
+•	Service Connector to connect DataSyncStream  to Functions, where the target of the Service Connector is set as a Function. 
+
+•	Service Connectors from Error Streams to Notifications and Object Storage, so that a support personnel is notified of the error and can later inspect the failed message in the Object Storage bucket.
+
 **Architecture**
+
+
 
 **Installation**
 
 
 _Pre-requisites_
-
 
 1. Make sure you've setup your API signing key, installed the Fn CLI, completed the CLI configuration steps and have setup the OCI Registry you want to use.
 
@@ -61,29 +70,26 @@ _Pre-requisites_
 
 3. You have the Target application's REST API, Auth token and Json Payload for loading data to it.
 
+_Creating the cloud artefacts in OCI_
+
+1. Download the files from the respository and navigate to location where you downloaded the files.
+
+2. Modify provider.tf , with values spefic to your OCI environment.
+
+3. Run following Terraform  commands to create all your resources in OCI. You will be asked the provide variable values. 
+
+- terraform init
+-  
+- terraform plan
+- 
+- terraform apply
 
 
-_Creating the cloud artefacts in OCI cloud_
+4. This step creates all the resources in OCI , including the setup of a VCN, an API Gateway, Streams, Service Connectors, Notifications,  Object Storage Bucket,uploading the Oracle Cloud Functions and creating an OCI Vault.
 
-Download the files from the respository and navigate to location where you downloaded the files
-
-Run Terraform to create all your resources in OCI. 
-
-terraform init
-
-terraform plan
-
-terraform apply
-
-This step creates all the resources in OCI , including the setup of a VCN, an API Gateway, uploading the Oracle Cloud Functions and creating a OCI Vault to store the Fusion ERP password. 
-
-
-Log In to OCI console and validate whether all OCI resources are created
-
-
+5. Log In to OCI console and validate whether all OCI resources are created
 
 _Running the sample_
-
 
 1. To run the sample, get the API Gateway URL corresponding to _sync_ route. It will look like following, https://pfk2...apigateway...../stream/sync?streamOCID=ocid1.stream.oc1......
 Get the OCID of the _DataSyncStream_ and pass it as the query param value of _streamOCID_.
@@ -113,7 +119,6 @@ Any headers should be passed as key, value pairs in _targetRestApiHeaders_.
 ```
 
 This API call will push the streamMessage part of the payload to _DataSyncStream_ . The Service Connector which connects _DataSyncStream_  to Functions will get invoked and the associated Task Function ,_ProcessDataStreamFunction_ will read the stream message and process the messages.
-
 
 2. Check the target application to see the operations invoked were processed correctly.
 
@@ -155,13 +160,8 @@ Also replace, _stream_ value in the _errormapping_ section with the error stream
 }
 ```
 
+**Help**
 
-
-
-
-
-
-Help
 If you need help with this sample, please log an issue within this repository and the code owners will help out where we can.
 
 Copyright (c) 2021, Oracle and/or its affiliates. Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
