@@ -34,6 +34,8 @@ Choosing OCI Cloud Native Services as middle tier has the following benefits,
 
 _Streaming_
 
+Streaming is a good fit for any use case in which data is produced and processed continually and sequentially in a publish-subscribe messaging model. Additionally, it can connect to Service Connector Hub which means that you can designate a stream as a data source, use Oracle Cloud Infrastructure Functions to process the stream's messages. It is also is  a fully managed and scalable OCI service. Customers need to pay only for what they use, making the service attractive for workloads with large spikes in usage.
+
 There are 2 types of streams used.
 
 •	A stream, DataSyncStream for storing the posted data from the source application/s.
