@@ -35,7 +35,9 @@ Choosing OCI Cloud Native Services as middle tier has the following benefits,
 _Streaming_
 
 There are 2 types of streams used.
+
 •	A stream, DataSyncStream for storing the posted data from the source application/s.
+
 •	A stream or streams for storing errored data. Posting of data to target application/s can error out due to multiple reasons, like server unavailability, data inconsistency, error on the server side while processing and so forth. Some of these errors are recoverable, say an error occurred due to server unavailability is recoverable when server is available. Some of them would be unrecoverable, i.e. the processing of data will not be successful even after several retrials. It is important to categorize and re-process errored messages based on the error type to avoid data loss. In the sample code developed for this pattern, retrial is based on the REST API response code. Please note that, the error type and retrial decision is based on the business use case and using REST API response code may not be suitable for all business cases.
 The data will be moved from DataSyncStream  to Error streams based on the error type and classification. 
 
@@ -44,19 +46,95 @@ _Functions_
 
 3 Functions are used in this pattern.
 
+
 •	PopulateDataStreamFunction → This Function is used to populate the DataSyncStream . It is invoked when the Source Application/s post data to the REST API exposed using API Gateway. 
+
 •	ProcessDataStreamFunction → This Function reads the DataSyncStream  messages and calls the target application’s API. If there is a failure in target application API call, the messages are sent to Error Streams. The Error Streams to use, are configurable at the Function Application level. This gives additional flexibility in defining the error conditions and the streams to which messages are pushed based on the business case. 
+
 •	RetryFunction → This Function retries the messages in Error Streams. This Function is exposed as a public API using an API Gateway. The exposed API can be invoked as a batch process or on an ad-hoc basis, to reprocess the failed messages in any Error Stream. 
+
+
+_API Gateway_
+
+There is one API Gateway used, SyncDataGateway. There are 2 routes defined in API Gateway deployment. One is to map the PopulateDataStreamFunction and the other is to map the RetryFunction.
+
+_Vault_
+
+A vault called, DataSync_Vault is used to store the auth tokens as secrets.
 
 _Service Connector Hub_
 
-There are 3 types of Service Connectors used.
+There are 3 Service Connectors used.
+
 •	Service Connector to connect DataSyncStream  to Functions, where the target of the Service Connector is set as a Function. 
 
-•	Service Connectors from Error Streams to Notifications and Object Storage, so that a support personnel is notified of the error and can later inspect the failed message in the Object Storage bucket.
+•	Service Connector from Error Streams to Notifications called UnrecoverableErrorToNotificationsConnector.
 
-**Architecture**
+•	Service Connector from Error Streams to Object Storage bucket, called UnrecoverableErrorToStorageConnector so that a support personnel is notified of the error and can later inspect the failed message in the Object Storage bucket.
 
+_Notifications_
+
+A topic called ErrorTopic is used in sending notifications by email. This topic is configured as a target of the Service Connector.
+
+_Object Storage Bucket_
+
+An object storage bucket called stream-error-bucket is used to store errored messages. This bucket is configured as a target of the Service Connector.
+
+
+
+**Process Flow**
+
+Step 1.	Source application/s posts data to the REST API exposed by the API Gateway. 
+
+The REST API call to API Gateway and sample json payload is given below. 
+REST API will have a query param, streamOCID. This is the OCID of the DataSyncStream.
+https://pf...../stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
+
+```
+{
+	"streamKey": "123",
+	"streamMessage": {
+	   "vaultSecretId":"testjan10_2",
+	    
+		"targetRestApi": "https://...../admin/soda/latest/orders",
+		"targetRestApiOperation": "POST",
+		"targetRestApiPayload": {
+			"orderid": "10jan",
+			"PO": "po28"
+		},
+		"targetRestApiHeaders": [{
+				"key": "Content-Type",
+				"value": "application/json"
+			}
+		]
+	}
+
+}
+```
+
+
+
+The json payload contains  streamKey and streamMessage nodes. streamKey is the key to be sent to the DataSyncStream and StreamMessage is the value to be sent to the DataSyncStream. 
+
+The streamMessage section is self-contained i.e.  it contains the target application API in targetRestApi node,  target application’s Rest API Operation in targetRestApiOperation node and a target application’s Rest API Payload in targetRestApiPayload node.
+
+In most cases the target application API will need a security token. If the source and target applications are SSO enabled, one option is to pass this token in the authorization header of the POST call to API Gateway. This token needs to be securely stored for target application API processing later by Functions. For this purpose,  the json payload contains a  node called vaultSecretId which is an id that is unique to every message.  The unique id will be used as a secret name in the Vault and the secret content will be the auth token passed in the Authorization Header of the API Gateway REST API call.
+
+
+Step 2.	PopulateDataStreamFunction  parses the json payload and creates a new stream message with Key as streamKey and value as streamMessage and pushes it to DataSyncStream. It also reads the vaultSecretId and creates a secret in Vault with content as the authorization header token.
+
+Step 3.	DataSyncStream  is connected to the Function, ProcessDataStreamFunction through a Service Connector. Service Connector invokes this Function when DataSyncStream is populated with new messages.
+
+Step 4.	ProcessDataStreamFunction processes the messages by reading the targetRestApiPayload  section in the payload and then invokes the target application API and operation. If an error occurs, say if the server is unavailable Function pushes the message to Error streams defined in the Function Application configuration variables.
+
+
+Step 5.	Lastly there is an option to retry the messages in Error streams using an API Gateway API, that exposes the RetryFunction.
+
+
+
+In the retry payload, specify the stream to retry using  StreamOCIDToRetry node and the offset from where the retry should happen. Consuming messages from a stream requires you to: create a cursor, then use the cursor to read messages. A cursor is a pointer to a location in a stream. One of the option is to use a  specific offset to start the reading of message. This is called an AT_OFFSET cursor. RetryFunction in the sample uses the AT_OFFSET cursor for consuming message and processes maximum of 10 messages at a time. This function also returns the last successfully read offset. This returned offset value can be stored in a location and passed as a value in json payload when the RetryFunction is invoked sequentially for processing large number of messages.
+
+The payload also contains an errormapping section to specify the streams to which errored messages should be directed to.
 
 
 **Installation**
@@ -79,9 +157,9 @@ _Creating the cloud artefacts in OCI_
 3. Run following Terraform  commands to create all your resources in OCI. You will be asked the provide variable values. 
 
 - terraform init
--  
+
 - terraform plan
-- 
+
 - terraform apply
 
 
