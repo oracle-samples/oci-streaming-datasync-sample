@@ -1,3 +1,5 @@
+//Copyright (c)  2021,  Oracle and/or its affiliates.
+// Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 package com.example.fn;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -44,18 +46,18 @@ import com.oracle.bmc.streaming.responses.PutMessagesResponse;
 
 public class RetryFunction {
 	private static final Logger LOGGER = Logger.getLogger(RetryFunction.class.getName());
+	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
+			.builder().build();
 	private HttpClient httpClient = null;
 
 	private StreamClient streamClient = null;
+	private SecretsClient secretsClient = null;
+	private StreamAdminClient streamAdminClient = null;
 
 	private String streamOCIDToRetry, readPartition = "";
 	private long readOffset;
-
-	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
-			.builder().build();
-	private StreamAdminClient streamAdminClient = null;
-	private Map<String, String> errorStreamMapping = new HashMap<>();
-	private SecretsClient secretsClient = null;
+	
+	private Map<String, String> errorStreamMapping = new HashMap<>();	
 
 	public RetryFunction() {
 
@@ -91,18 +93,23 @@ public class RetryFunction {
 	 * @param requestBody
 	 * @throws JsonMappingException
 	 * @throws JsonProcessingException
-	 * 
+	 * This method parses the request body 
 	 */
 	private void parseRequestBody(String requestBody) throws JsonProcessingException {
 
 		ObjectMapper mapper = new ObjectMapper();
 		JsonNode jsonNode = mapper.readTree(requestBody);
+		
+		//Stream to retry
 
 		streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
-		LOGGER.info("streamOCIDToRetry"+streamOCIDToRetry);
+		//Stream Offset to start the reading
 
 		readOffset = jsonNode.path("readOffset").asLong();
+		//Stream partition to read
 		readPartition = jsonNode.path("readPartition").asText();
+		
+		//Get the error mapping nodes to get the error code and error stream ocid mappping to use
 
 		JsonNode errorMMappingNodes = jsonNode.get("errormapping");
 
@@ -118,7 +125,7 @@ public class RetryFunction {
 	 * @param streamOCID
 	 * @return
 	 * 
-	 *         This method obtains the Stream object from the stream OCID.
+	 * This method obtains the Stream object from the stream OCID.
 	 */
 	private Stream getStream(String streamOCID) {
 		GetStreamResponse getResponse = streamAdminClient
@@ -129,7 +136,7 @@ public class RetryFunction {
 	/**
 	 * @return String
 	 * 
-	 *         This method creates a message cursor using an offset cursor type
+	 * This method creates a Stream message cursor using an offset cursor type
 	 */
 	private String getSourceStreamCursor() {
 
@@ -150,17 +157,14 @@ public class RetryFunction {
 	 * @throws IOException
 	 * @throws InterruptedException
 	 * 
-	 *                              This method is used to read the messages from
-	 *                              the source stream based on the offset
+	 *This method is used to read the messages from
+	 *the source stream based on the offset
 	 */
 	private long readMessagesFromSourceStream(String cursor) throws IOException, InterruptedException {
 
 		long latestOffset = 0;
 
-		// By default, the service returns as many messages as possible. You can use the
-		// limit parameter
-		// to specify any value up to 10,000, but consider your average message size to
-		// avoid exceeding throughput on the stream.
+		
 		GetMessagesRequest getRequest = GetMessagesRequest.builder().streamId(streamOCIDToRetry).cursor(cursor)
 				.limit(10).build();
 
@@ -179,6 +183,7 @@ public class RetryFunction {
 			latestOffset = message.getOffset();
 
 		}
+		//Return the offset upto which messages were read
 
 		return latestOffset;
 
@@ -190,27 +195,28 @@ public class RetryFunction {
 	 * @throws IOException
 	 * @throws InterruptedException
 	 * 
-	 *                              This method parses the incoming message and
-	 *                              processes it based on the operation defined in
-	 *                              the message
-	 */
+	 * This method parses the incoming message and
+	 * processes it 
+	 *                              
+	 * **/
+	
 
 	private void processMessage(String streamMessage, String streamKey) throws IOException, InterruptedException {
 
-		String data = null;
+		String targetRestApiPayload = null;
 
 		HttpRequest request = null;
 		int responseStatusCode;
 		ObjectMapper objectMapper = new ObjectMapper();
 
 		JsonNode jsonNode = objectMapper.readTree(streamMessage);
-		// parse the streammessage section of the json payload
-		String url = jsonNode.get("url").asText();
-		String operation = jsonNode.get("operation").asText();
+		// parse the stream message
+		String targetRestApi = jsonNode.get("targetRestApi").asText();
+		String targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
 		String vaultSecretId = jsonNode.get("vaultSecretId").asText();
-		data = jsonNode.get("data").toString();
-		// Get the headers section of the json payload
-		JsonNode headersNode = jsonNode.get("headers");
+		targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
+		// Get the targetRestApiHeaders section of the json payload
+		JsonNode headersNode = jsonNode.get("targetRestApiHeaders");
 		Map<String, String> httpHeaders = new HashMap<>();
 
 		for (int i = 0; i < headersNode.size(); i++) {
@@ -219,11 +225,11 @@ public class RetryFunction {
 
 		}
 
-		switch (operation) {
+		switch (targetRestApiOperation) {
 
 		case "PUT": {
-			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(data))
-					.uri(URI.create(url));
+			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(targetRestApiPayload))
+					.uri(URI.create(targetRestApi));
 
 			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 			break;
@@ -232,16 +238,16 @@ public class RetryFunction {
 
 		case "POST": {
 
-			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(data))
-					.uri(URI.create(url));
+			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(targetRestApiPayload))
+					.uri(URI.create(targetRestApi));
 
 			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 			break;
 		}
 
 		case "DELETE": {
-			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(url));
-			// add headers to the request
+			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(targetRestApi));
+			// add targetRestApiHeaders to the request
 			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 		}
 		}
@@ -259,6 +265,7 @@ public class RetryFunction {
 			populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf(responseStatusCode)));
 
 		} else {
+			//if there is no error stream defined for the REST response code, use the default
 			populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf("unmapped")));
 		}
 
@@ -270,14 +277,14 @@ public class RetryFunction {
 	 * @param vaultSecretId
 	 * @return HttpRequest
 	 * 
-	 *         This method constructs http request
+	 * This method constructs http request to make the target REST API call
 	 */
 	private HttpRequest constructHttpRequest(Builder builder, Map<String, String> httpHeaders, String vaultSecretId) {
 
 		String authorizationHeaderName = "Authorization";
 		// Read the Vault to get the auth token
 		String authToken = getSecretFromVault(vaultSecretId);
-		// add headers to the request
+		// add targetRestApiHeaders to the request
 
 		httpHeaders.forEach((k, v) -> builder.header(k, v));
 		// add authorization token to the request
@@ -290,9 +297,9 @@ public class RetryFunction {
 	 * @param vaultSecretId
 	 * @return String
 	 * 
-	 *         This method is used to get the auth token from the vault. The secret
-	 *         OCID is present in the message as the vaultSecretId and it is used for
-	 *         getting the secret content
+	 *  This method is used to get the auth token from the vault. The secret
+	 *  OCID is present in the message as the vaultSecretId and it is used for
+	 *  getting the secret content
 	 */
 	private String getSecretFromVault(String vaultSecretId) {
 
@@ -318,8 +325,8 @@ public class RetryFunction {
 	 * @param streamKey
 	 * @param errorStreamOCID
 	 * 
-	 *                        This method is used to populate the error stream with
-	 *                        the failed message
+	 *   This method is used to populate the error stream with
+	 *   the failed message
 	 *
 	 */
 	private void populateErrorStream(String streamMessage, String streamKey, String errorStreamOCID) {

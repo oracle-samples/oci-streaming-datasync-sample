@@ -1,3 +1,7 @@
+//Copyright (c)  2021,  Oracle and/or its affiliates.
+// Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
+	
+	
 package com.example.fn;
 
 import java.io.IOException;
@@ -35,17 +39,18 @@ import com.oracle.bmc.streaming.responses.PutMessagesResponse;
 public class ReadDataStreamFunction {
 
 	private static final Logger LOGGER = Logger.getLogger(ReadDataStreamFunction.class.getName());
+	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
+			.builder().build();
 
 	private HttpClient httpClient = null;
 
 	private SecretsClient secretsClient = null;
-
-	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
-			.builder().build();
 	private StreamAdminClient streamAdminClient = null;
 
-	public ReadDataStreamFunction() {
+	
+	
 
+	public ReadDataStreamFunction() {
 		streamAdminClient = StreamAdminClient.builder().build(provider);
 
 		httpClient = HttpClient.newHttpClient();
@@ -58,24 +63,27 @@ public class ReadDataStreamFunction {
 	 * @throws IOException
 	 * @throws InterruptedException
 	 * 
-	 *                              This is the entry point of the function
-	 *                              execution.
+	 * This is the entry point of the function
+	 *  execution.
 	 */
 	public void handleRequest(String incomingMessage) throws IOException, InterruptedException {
 
 		ObjectMapper objectMapper = new ObjectMapper();
-		LOGGER.info(incomingMessage);
+		//Read the stream messages
+		
 
 		JsonNode jsonTree = objectMapper.readTree(incomingMessage);
-
+        
 		for (int i = 0; i < jsonTree.size(); i++) {
 			JsonNode jsonNode = jsonTree.get(i);
+			//Get the stream key and value
 
 			String streamKey = jsonNode.get("key").asText();
 			String streamMessage = jsonNode.get("value").asText();
+			//Decode the stream message
 
 			String decodedMessageValue = new String(Base64.getDecoder().decode(streamMessage.getBytes()));
-			LOGGER.info(decodedMessageValue);
+			
 
 			processMessage(decodedMessageValue, streamKey);
 
@@ -87,28 +95,30 @@ public class ReadDataStreamFunction {
 	 * @param streamMessage
 	 * @param streamKey
 	 * @throws IOException
-	 * @throws InterruptedException This method parses the incoming message and
-	 *                              processes it based on the operation defined in
-	 *                              the message
+	 * @throws InterruptedException 
+	 * This method parses the incoming message and
+	 * processes it based on the targetRestApiOperation defined in
+	 *  the message
 	 */
 	private void processMessage(String streamMessage, String streamKey) throws IOException, InterruptedException {
 
-		String data = "";
+		String targetRestApiPayload = "";
 
 		int responseStatusCode = 0;
 		ObjectMapper objectMapper = new ObjectMapper();
 		HttpRequest request = null;
 		JsonNode jsonNode = objectMapper.readTree(streamMessage);
-		// parse the streammessage section of the json payload
+		// parse the message and get the vault secret OCID where the authorization header token is stored
+		//REST API targetRestApi  of the target application and the REST targetRestApiOperation
 		String vaultSecretId = jsonNode.get("vaultSecretId").asText();
-		String url = jsonNode.get("url").asText();
-		String operation = jsonNode.get("operation").asText();
-
-		if (jsonNode.get("data") != null) {
-			data = jsonNode.get("data").toString();
+		String targetRestApi = jsonNode.get("targetRestApi").asText();
+		String targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
+        //Get the json payload section
+		if (jsonNode.get("targetRestApiPayload") != null) {
+			targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
 		}
-		// Get the headers section of the json payload
-		JsonNode headersNode = jsonNode.get("headers");
+		// Get the targetRestApiHeaders section of the json payload
+		JsonNode headersNode = jsonNode.get("targetRestApiHeaders");
 		Map<String, String> httpHeaders = new HashMap<>();
 
 		for (int i = 0; i < headersNode.size(); i++) {
@@ -117,11 +127,11 @@ public class ReadDataStreamFunction {
 
 		}
 
-		switch (operation) {
+		switch (targetRestApiOperation) {
 
 		case "PUT": {
-			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(data))
-					.uri(URI.create(url));
+			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(targetRestApiPayload))
+					.uri(URI.create(targetRestApi));
 
 			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 			break;
@@ -130,15 +140,15 @@ public class ReadDataStreamFunction {
 
 		case "POST": {
 
-			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(data))
-					.uri(URI.create(url));
+			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(targetRestApiPayload))
+					.uri(URI.create(targetRestApi));
 
 			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 			break;
 		}
 
 		case "DELETE": {
-			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(url));
+			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(targetRestApi));
 
 			request = constructHttpRequest(builder, httpHeaders, vaultSecretId);
 		}
@@ -149,8 +159,7 @@ public class ReadDataStreamFunction {
 		HttpResponse<InputStream> response = httpClient.send(request, BodyHandlers.ofInputStream());
 		// get the status code
 		responseStatusCode = response.statusCode();
-		LOGGER.info("responseStatusCode" + responseStatusCode);
-
+		
 		// Get the error stream OCID mapped to the REST response error code
 
 		String errorStreamOCID = System.getenv().get("_" + responseStatusCode + "_error_stream_ocid");
@@ -177,14 +186,14 @@ public class ReadDataStreamFunction {
 	 * @param vaultSecretId
 	 * @return HttpRequest
 	 * 
-	 *         This method constructs http request for the target application call
+	 *  This method constructs http request for the target application call
 	 */
 	private HttpRequest constructHttpRequest(Builder builder, Map<String, String> httpHeaders, String vaultSecretId) {
 
 		String authorizationHeaderName = "Authorization";
 		// Read the Vault to get the auth token
 		String authToken = getSecretFromVault(vaultSecretId);
-		// add headers to the request
+		// add targetRestApiHeaders to the request
 
 		httpHeaders.forEach((k, v) -> builder.header(k, v));
 		// add authorization token to the request
@@ -197,9 +206,9 @@ public class ReadDataStreamFunction {
 	 * @param vaultSecretId
 	 * @return String
 	 * 
-	 *         This method is used to get the auth token from the vault. The secret
-	 *         OCID is present in the message as the vaultSecretId and it is used for
-	 *         getting the secret content
+	 * This method is used to get the auth token from the vault. The secret
+	 * OCID is present in the message as the vaultSecretId and it is used for
+	 * getting the secret content
 	 */
 	private String getSecretFromVault(String vaultSecretId) {
 
@@ -236,8 +245,8 @@ public class ReadDataStreamFunction {
 	 * @param errorStream
 	 * @param errorStreamOCID
 	 * 
-	 *                        This method is used to populate the error stream with
-	 *                        the failed message
+	 * This method is used to populate the error stream with
+	 * the failed message
 	 */
 	private void populateErrorStream(String streamMessage, String streamKey, Stream errorStream,
 			String errorStreamOCID) {

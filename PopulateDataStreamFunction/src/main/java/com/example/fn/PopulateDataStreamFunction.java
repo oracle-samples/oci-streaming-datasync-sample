@@ -1,3 +1,5 @@
+//Copyright (c)  2021,  Oracle and/or its affiliates.
+// Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 package com.example.fn;
 
 import java.util.Arrays;
@@ -58,8 +60,8 @@ public class PopulateDataStreamFunction {
 	 * @throws JsonMappingException
 	 * @throws JsonProcessingException
 	 * 
-	 *                                 This is the entry point of the function
-	 *                                 execution.
+	 * This is the entry point of the function
+	 *  execution.
 	 */
 	public void handleRequest(HTTPGatewayContext httpGatewayContext, String requestBody)
 			throws JsonMappingException, JsonProcessingException {
@@ -105,10 +107,10 @@ public class PopulateDataStreamFunction {
 	 * @throws JsonMappingException
 	 * @throws JsonProcessingException
 	 * 
-	 *                                 This method parses the request body and gets
-	 *                                 the message key, the message value. It also
-	 *                                 obtains the unique id of the message from the
-	 *                                 message value
+	 * This method parses the request body and gets
+	 * the message key, the message value. It also
+	 * obtains the unique id of the message from the
+	 *  message value
 	 */
 	private void parseRequestBody(String requestBody) throws JsonProcessingException {
 
@@ -130,7 +132,8 @@ public class PopulateDataStreamFunction {
 
 	/**
 	 * @param streamOCID
-	 * @return Stream This method obtains the Stream object from the stream OCID.
+	 * @return Stream 
+	 * This method obtains the Stream object from the stream OCID.
 	 */
 	private Stream getStream(String streamOCID) {
 		GetStreamResponse getResponse = streamAdminClient
@@ -142,15 +145,15 @@ public class PopulateDataStreamFunction {
 	 * @param authorizationHeader
 	 * @return String
 	 * 
-	 *         This method is to store the auth token in a vault. It generates a
-	 *         secret with content as auth token and name as the vaultSecretId.
-	 *         The secret is stored in the vault in the compartment specified in
-	 *         application configuration variables. The secret encryption key used
-	 *         is also specified in the application configuration variable. After
-	 *         the creation of the secret, the OCID of the newly created secret is
-	 *         returned. This OCID will replace the vaultSecretId of the message and
-	 *         later will be used for reading the secret content  by other
-	 *         functions.
+	 * This method is to store the auth token in a vault. It generates a
+	 * secret with content as auth token and name as the vaultSecretId.
+	 * The secret is stored in the vault in the compartment specified in
+	 * application configuration variables. The secret encryption key used
+	 * is also specified in the application configuration variable. After
+	 * the creation of the secret, the OCID of the newly created secret is
+	 * returned. This OCID will replace the vaultSecretId of the message and
+	 * later will be used for reading the secret content  by other
+	 * functions.
 	 */
 	private String createSecretInVault(String authorizationHeader) {
 
@@ -158,7 +161,7 @@ public class PopulateDataStreamFunction {
 		Base64SecretContentDetails base64SecretContentDetails = Base64SecretContentDetails.builder()
 				.content(authorizationHeader).name("secretcontent" + vaultSecretId)
 				.stage(SecretContentDetails.Stage.Current).build();
-		LOGGER.info("message unique id" + vaultSecretId);
+		
 		// The secret is created in the compartment and vault specified in application
 		// configuration variable
 		// The secret uses the key mentioned in the application configuration variable

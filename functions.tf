@@ -1,6 +1,5 @@
-
-
-
+# Copyright (c)  2021,  Oracle and/or its affiliates.
+# Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 
 resource "null_resource" "deploy_RetryFunction" {
@@ -22,9 +21,6 @@ depends_on = [null_resource.deploy_RetryFunction]
   
 }
 
-
-
-
 resource "null_resource" "deploy_ReadDataStreamFunction" {
   depends_on = [ oci_functions_application.export_DataSyncApplication]
  
@@ -44,10 +40,6 @@ data "oci_functions_functions" "test_deploy_ReadDataStreamFunction" {
     
   
 }
-
-
-
-
 
 resource "null_resource" "deploy_PopulateDataStreamFunction" {
   
