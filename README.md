@@ -85,8 +85,81 @@ Log In to OCI console and validate whether all OCI resources are created
 _Running the sample_
 
 
-Contributing
-We welcome all contributions to this sample and have a contribution guide for you to follow if you'd like to contribute.
+1. To run the sample, get the API Gateway URL corresponding to _sync_ route. It will look like following, https://pfk2...apigateway...../stream/sync?streamOCID=ocid1.stream.oc1......
+Get the OCID of the _DataSyncStream_ and pass it as the query param value of _streamOCID_.
+
+A sample json payload is given below. You can not only have POST operations but also PUT and DELETE operatons. Change the _targetRESTApi_ and _targetRESTApiOperation_ values accordingly.
+Any headers should be passed as key, value pairs in _targetRestApiHeaders_.
+```
+{
+	"streamKey": "123",
+	"streamMessage": {
+	   "vaultSecretId":"testjan10_2",
+	    
+		"targetRestApi": "https://...../admin/soda/latest/orders",
+		"targetRestApiOperation": "POST",
+		"targetRestApiPayload": {
+			"orderid": "10jan",
+			"PO": "po28"
+		},
+		"targetRestApiHeaders": [{
+				"key": "Content-Type",
+				"value": "application/json"
+			}
+		]
+	}
+
+}
+```
+
+This API call will push the streamMessage part of the payload to _DataSyncStream_ . The Service Connector which connects _DataSyncStream_  to Functions will get invoked and the associated Task Function ,_ProcessDataStreamFunction_ will read the stream message and process the messages.
+
+
+2. Check the target application to see the operations invoked were processed correctly.
+
+3. To check for retry and failures, you can pass incorrect values in the payload and see whether the Error Streams got populated correctly. In case of errors, you will also receive notifications in the mail id you entered in Notifications Service. You can also see the errored messages in the Object Storage Bucket.
+
+4. To test a retry in case of failure, call the API Gateway REST API, corresponding to _retry_ route. It will look like this
+https://pfk2e.....apigateway...../stream/retry
+
+Sample payload is given below.
+
+Replace the streamOCIDToRetry with the OCID of the error stream to be retried
+readoffset is the offset location from where the messages are to be read. RetryFunction will read maximum of 10 offsets at a time and returns the last successfully read offset. So if this API needs multiple invocation, store the return value of the API and make subsequent call by passing the last offset as the _readoffset_ value in the payload.
+
+Also replace, _stream_ value in the _errormapping_ section with the error streams in your OCI environment. If you dont need to specifically map to a particular error stream, keep only the _responsecode_ as _unmapped_ block.
+
+```
+{
+ "streamOCIDToRetry":"ocid1.stream.oc1.iad.......",
+ 		"readOffset": 382,
+ 	"readPartition": "0",
+  "errormapping": 
+    [
+            {
+                "responsecode": "404",
+                "stream": "ocid1.stream.oc1.iad.a..."
+            },
+            {
+                "responsecode": "503",
+                "stream": "ocid1.stream.oc1.iad.a...."
+            }      
+            ,
+            {
+                "responsecode": "unmapped",
+                "stream": "ocid1.stream.oc1.iad.am...."
+            } 
+        ]
+   
+  
+}
+```
+
+
+
+
+
+
 
 Help
 If you need help with this sample, please log an issue within this repository and the code owners will help out where we can.
