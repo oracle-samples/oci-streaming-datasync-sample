@@ -1,4 +1,4 @@
-# Copyright (c)  2021,  Oracle and/or its affiliates.
+# Copyright (c)  2022,  Oracle and/or its affiliates.
 # Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 provider "oci" {
   tenancy_ocid = "ocid1.tenancy.oc1..aaaaaaaadymht6gout6mc5yhsqo4syry4inm2kc44s5o4s7c3re2ylgs66xa"
