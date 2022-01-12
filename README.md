@@ -94,7 +94,7 @@ An object storage bucket called _stream-error-bucket_ is used to store errored m
 
 ## Architecture
 
-![Architecture]( Architecture.png "Architecture Diagram")
+![Architecture]( /image/Architecture.png "Architecture Diagram")
 
 ## Process Flow
 
@@ -162,26 +162,28 @@ The payload also contains an errormapping section to specify the streams to whic
 
 3. You have the Target application's REST API, Auth token and Json Payload for loading data to it.
 
-_Creating the cloud artefacts in OCI_
+### Creating the cloud artefacts in OCI
 
-1. Download the files from the respository and navigate to location where you downloaded the files.
+1. Download the files from the respository and navigate to location where you downloaded the files. Navigate to _code_ folder.
 
 2. Modify _provider.tf_ , with values spefic to your OCI environment.
 
 3. Run following Terraform  commands to create all your resources in OCI. You will be asked the provide variable values. 
 
-- _terraform init_
+	- _terraform init_
 
-- _terraform plan_
+	- _terraform plan_
 
-- _terraform apply_
+	- _terraform apply_
 
 
 4. This step creates all the resources in OCI , including the setup of a VCN, an API Gateway, Streams, Service Connectors, Notifications,  Object Storage Bucket,uploading the Oracle Cloud Functions and creating an OCI Vault.
 
-5. Log In to OCI console and validate whether all OCI resources are created
+5. Log In to OCI console and verify whether all OCI resources are created.
 
-6. Add policies and IAM 
+6. Add [IAM policies](https://docs.oracle.com/en-us/iaas/Content/Identity/Concepts/commonpolicies.htm) related to usage of Functions, Streams, Service Connector, Object Storage and Notifications
+
+
 
 ### Running the sample
 
