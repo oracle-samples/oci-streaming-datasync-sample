@@ -128,16 +128,16 @@ https://pf...../stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
 
 
 
-The json payload contains  _streamKey_ and _streamMessage_ nodes. _streamKey_ is the key to be sent to the DataSyncStream and _streamMessage_ is the value to be sent to the _DataSyncStream_. 
+The json payload contains  _streamKey_ and _streamMessage_ nodes. _streamKey_ is the key to be sent to the _DataSyncStream_ and _streamMessage_ is the value to be sent to the _DataSyncStream_. 
 
 The _streamMessage_ section is self-contained i.e.  it contains the target application API in _targetRestApi_ node,  target application’s Rest API Operation in _targetRestApiOperation_ node and a target application’s Rest API Payload in _targetRestApiPayload_ node.
 
 In most cases the target application API will need a security token. If the source and target applications are SSO enabled, one option is to pass this token in the authorization header of the POST call to API Gateway. This token needs to be securely stored for target application API processing later by Functions. For this purpose,  the json payload contains a  node called _vaultSecretId_ which is an id that is unique to every message.  The unique id will be used as a secret name in the Vault and the secret content will be the auth token passed in the Authorization Header of the API Gateway REST API call.
 
 
-Step 2.	_PopulateDataStreamFunction_  parses the json payload and creates a new stream message with Key as _streamKey_ and value as _streamMessage_ and pushes it to DataSyncStream. It also reads the vaultSecretId and creates a secret in Vault with content as the authorization header token.
+Step 2.	_PopulateDataStreamFunction_  parses the json payload and creates a new stream message with Key as _streamKey_ and value as _streamMessage_ and pushes it to _DataSyncStream_. It also reads the _vaultSecretId_ and creates a secret in Vault with content as the authorization header token.
 
-Step 3.	_DataSyncStream_  is connected to the Function, _ProcessDataStreamFunction_ through a Service Connector. Service Connector invokes this Function when DataSyncStream is populated with new messages.
+Step 3.	_DataSyncStream_  is connected to the Function, _ProcessDataStreamFunction_ through a Service Connector. Service Connector invokes this Function when _DataSyncStream_ is populated with new messages.
 
 Step 4.	_ProcessDataStreamFunction_ processes the messages by reading the _targetRestApiPayload_  section in the payload and then invokes the target application API and operation. If an error occurs, say if the server is unavailable Function pushes the message to Error streams defined in the Function Application configuration variables.
 
@@ -146,7 +146,7 @@ Step 5.	Lastly there is an option to retry the messages in Error streams using a
 
 
 
-In the retry payload, specify the stream to retry using  _StreamOCIDToRetry_ node and the offset from where the retry should happen. Consuming messages from a stream requires you to: create a cursor, then use the cursor to read messages. A cursor is a pointer to a location in a stream. One of the option is to use a  specific offset to start the reading of message. This is called an AT_OFFSET cursor. RetryFunction in the sample uses the AT_OFFSET cursor for consuming message and processes maximum of 10 messages at a time. This function also returns the last successfully read offset. This returned offset value can be stored in a location and passed as a value in json payload when the RetryFunction is invoked sequentially for processing large number of messages.
+In the retry payload, specify the stream to retry using  _StreamOCIDToRetry_ node and the offset from where the retry should happen. Consuming messages from a stream requires you to: create a cursor, then use the cursor to read messages. A cursor is a pointer to a location in a stream. One of the option is to use a  specific offset to start the reading of message. This is called an AT_OFFSET cursor. _RetryFunction_ in the sample uses the AT_OFFSET cursor for consuming message and processes maximum of 10 messages at a time. This function also returns the last successfully read offset. This returned offset value can be stored in a location and passed as a value in json payload when the _RetryFunction_ is invoked sequentially for processing large number of messages.
 
 The payload also contains an errormapping section to specify the streams to which errored messages should be directed to.
 
@@ -214,7 +214,7 @@ Any REST API headers should be passed as key, value pairs in _targetRestApiHeade
 }
 ```
 
-This API call will push the streamMe__ssage part of the payload to _DataSyncStream_ . The Service Connector which connects _DataSyncStream_  to Functions will get invoked and the associated Task Function ,_ProcessDataStreamFunction_ will read the stream message and process the messages.
+This API call will push the _streamMessage_ part of the payload to _DataSyncStream_ . The Service Connector which connects _DataSyncStream_  to Functions will get invoked and the associated Task Function ,_ProcessDataStreamFunction_ will read the stream message and process the messages.
 
 2. Check the target application to see the operations invoked were processed correctly.
 
