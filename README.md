@@ -1,6 +1,6 @@
-****Data Syncing using OCI - Streaming Pattern****
+# Data Syncing using OCI - Streaming Pattern
 
-**Introduction**
+## Introduction
 
 
 There are many instances where there is a need for syncing data from source application/s to target application/s. 
@@ -29,10 +29,11 @@ Choosing OCI Cloud Native Services as middle tier has the following benefits,
 3.	Availability of good pricing models.
 4.	They are highly secure, scalable, durable and reliable.
 
-**Bringing the services together**
+## Services / libraries used in this sample
 
 
-_Streaming_
+[Streaming](https://www.oracle.com/cloud-native/streaming/)
+
 
 Streaming is a good fit for any use case in which data is produced and processed continually and sequentially in a publish-subscribe messaging model. Additionally, it can connect to Service Connector Hub which means that you can designate a stream as a data source, use Oracle Cloud Infrastructure Functions to process the stream's messages. It is also is  a fully managed and scalable OCI service. Customers need to pay only for what they use, making the service attractive for workloads with large spikes in usage.
 
@@ -44,7 +45,7 @@ There are 2 types of streams used.
 The data will be moved from _DataSyncStream_  to Error streams based on the error type and classification. 
 
 
-_Functions_
+[Functions](https://www.oracle.com/cloud-native/functions/)
 
 3 Functions are used in this pattern.
 
@@ -56,15 +57,15 @@ _Functions_
 •	RetryFunction → This Function retries the messages in Error Streams. This Function is exposed as a public API using an API Gateway. The exposed API can be invoked as a batch process or on an ad-hoc basis, to reprocess the failed messages in any Error Stream. 
 
 
-_API Gateway_
+[API Gateway](https://docs.oracle.com/en-us/iaas/Content/APIGateway/)
 
 There is one API Gateway used, _SyncDataGateway_. There are 2 routes defined in API Gateway deployment. One is to map the _PopulateDataStreamFunction_ and the other is to map the _RetryFunction_.
 
-_Vault_
+[Vault]https://www.oracle.com/in/security/cloud-security/key-management/)
 
 A vault called, _DataSyncVault_ is used to store the auth tokens as secrets.
 
-_Service Connector Hub_
+[Service Connector Hub](https://www.oracle.com/devops/service-connector-hub/)
 
 There are 3 Service Connectors used.
 
@@ -74,17 +75,28 @@ There are 3 Service Connectors used.
 
 •	Service Connector from Error Streams to Object Storage bucket, called _UnrecoverableErrorToStorageConnector_ so that a support personnel is notified of the error and can later inspect the failed message in the Object Storage bucket.
 
-_Notifications_
+[Notifications](https://www.oracle.com/devops/notifications/)
 
 A topic called _ErrorTopic_ is used in sending notifications by email. This topic is configured as a target of the Service Connector.
 
-_Object Storage Bucket_
+[Object Storage Bucket](https://www.oracle.com/cloud/storage/object-storage/)
 
 An object storage bucket called _stream-error-bucket_ is used to store errored messages. This bucket is configured as a target of the Service Connector.
 
 
+[HashiCorp Terraform](https://www.Terraform.io/)
 
-**Process Flow**
+[Oracle Terraform Provider](https://registry.Terraform.io/providers/hashicorp/oci/latest/docs)
+
+[Java](https://www.oracle.com/java/)
+  - [Oracle Cloud Infrastructure SDK for Java](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/javasdk.htm)
+  
+
+## Architecture
+
+![Architecture]( Architecture.png "Architecture Diagram")
+
+## Process Flow
 
 Step 1.	Source application/s posts data to the REST API exposed by the API Gateway. 
 
@@ -139,10 +151,10 @@ In the retry payload, specify the stream to retry using  _StreamOCIDToRetry_ nod
 The payload also contains an errormapping section to specify the streams to which errored messages should be directed to.
 
 
-**Installation**
+## Installation
 
 
-_Pre-requisites_
+### Pre-requisites
 
 1. Make sure you've setup your API signing key, installed the Fn CLI, completed the CLI configuration steps and have setup the OCI Registry you want to use.
 
@@ -169,7 +181,7 @@ _Creating the cloud artefacts in OCI_
 
 5. Log In to OCI console and validate whether all OCI resources are created
 
-**Running the sample**
+### Running the sample
 
 1. To run the sample, get the API Gateway URL corresponding to _sync_ route. It will look like following, https://pfk2...apigateway...../stream/sync?streamOCID=ocid1.stream.oc1......
 Get the OCID of the _DataSyncStream_ and pass it as the query param value of _streamOCID_.
@@ -240,8 +252,27 @@ Also replace, _stream_ value in the _errormapping_ section with the error stream
 }
 ```
 
-**Help**
+
+## Troubleshooting
+
+- If things dont work, here are some [troubleshooting tips for Oracle Cloud Functions](https://docs.cloud.oracle.com/en-us/iaas/Content/Functions/Tasks/functionstroubleshooting.htm) you can try.
+
+- The Oracle Cloud Functions are configured to emit logging info using standard system logging, this can be useful when debugging the functions. This logging can be either retrieved in OCI Logging or you can use a 3rd party remote syslogurl logging service. OCI Logging is installed/configured by default , if you want to use a 3rd party system like [Papertrail](https://papertrailapp.com/) then setup the remote logging using the following command.
+
+  `fn update app Serverless_Integration --syslog-url <syslogurl>`
+
+- For more information see this [blog article](https://blogs.oracle.com/developers/simple-serverless-logging-for-oracle-functions) written by the Oracle OCI development organisation where they explain how to setup logging for Oracle Cloud Functions.
+
+## Security
+
+Oracle takes security seriously and has a dedicated response team for [reporting security vulnerabilities](./SECURITY.md) and to answer any security and vulnerability related questions.
+
+## Contributing
+
+We welcome all contributions to this sample and have a [contribution guide](./CONTRIBUTING.md) for you to follow if you'd like to contribute.
+
+## Help
 
 If you need help with this sample, please log an issue within this repository and the code owners will help out where we can.
 
-Copyright (c) 2021, Oracle and/or its affiliates. Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
+Copyright (c) 2022, Oracle and/or its affiliates. Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
