@@ -156,7 +156,7 @@ The payload also contains an errormapping section to specify the streams to whic
 
 ### Pre-requisites
 
-1. Make sure you've setup your API signing key, installed the Fn CLI, completed the CLI configuration steps and have setup the OCI Registry you want to use.
+1. Make sure you've setup your [API signing key](https://docs.cloud.oracle.com/iaas/Content/API/Concepts/apisigningkey.htm), installed the [Fn CLI](https://github.com/fnproject/cli), completed the [CLI configuration](https://docs.cloud.oracle.com/iaas/Content/API/Concepts/sdkconfig.htm#CLIConfiguration) steps and have setup the [OCI Registry](https://docs.cloud.oracle.com/iaas/Content/Registry/Concepts/registryoverview.htm) you want to use.
 
 2. Ensure Terraform is installed.
 
@@ -166,20 +166,22 @@ _Creating the cloud artefacts in OCI_
 
 1. Download the files from the respository and navigate to location where you downloaded the files.
 
-2. Modify provider.tf , with values spefic to your OCI environment.
+2. Modify _provider.tf_ , with values spefic to your OCI environment.
 
 3. Run following Terraform  commands to create all your resources in OCI. You will be asked the provide variable values. 
 
-- terraform init
+- _terraform init_
 
-- terraform plan
+- _terraform plan_
 
-- terraform apply
+- _terraform apply_
 
 
 4. This step creates all the resources in OCI , including the setup of a VCN, an API Gateway, Streams, Service Connectors, Notifications,  Object Storage Bucket,uploading the Oracle Cloud Functions and creating an OCI Vault.
 
 5. Log In to OCI console and validate whether all OCI resources are created
+
+6. Add policies and IAM 
 
 ### Running the sample
 
@@ -257,11 +259,10 @@ Also replace, _stream_ value in the _errormapping_ section with the error stream
 
 - If things dont work, here are some [troubleshooting tips for Oracle Cloud Functions](https://docs.cloud.oracle.com/en-us/iaas/Content/Functions/Tasks/functionstroubleshooting.htm) you can try.
 
-- The Oracle Cloud Functions are configured to emit logging info using standard system logging, this can be useful when debugging the functions. This logging can be either retrieved in OCI Logging or you can use a 3rd party remote syslogurl logging service. OCI Logging is installed/configured by default , if you want to use a 3rd party system like [Papertrail](https://papertrailapp.com/) then setup the remote logging using the following command.
+- The Oracle Cloud Functions are configured to emit logging info using standard system logging, this can be useful when debugging the functions. 
 
-  `fn update app Serverless_Integration --syslog-url <syslogurl>`
+-  Make sure you have defined all the required IAM policies.
 
-- For more information see this [blog article](https://blogs.oracle.com/developers/simple-serverless-logging-for-oracle-functions) written by the Oracle OCI development organisation where they explain how to setup logging for Oracle Cloud Functions.
 
 ## Security
 
