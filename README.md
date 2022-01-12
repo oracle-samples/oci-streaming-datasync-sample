@@ -61,7 +61,7 @@ The data will be moved from _DataSyncStream_  to Error streams based on the erro
 
 There is one API Gateway used, _SyncDataGateway_. There are 2 routes defined in API Gateway deployment. One is to map the _PopulateDataStreamFunction_ and the other is to map the _RetryFunction_.
 
-[Vault]https://www.oracle.com/in/security/cloud-security/key-management/)
+[Vault](https://www.oracle.com/in/security/cloud-security/key-management/)
 
 A vault called, _DataSyncVault_ is used to store the auth tokens as secrets.
 
