@@ -48,6 +48,7 @@ The data will be moved from _DataSyncStream_  to Error streams based on the erro
 [Functions](https://www.oracle.com/cloud-native/functions/)
 
 There is one Application, _DataSyncApplication_ . It has the following configuration variables.
+They are for defining the error stream OCIDs and Vault OCIDs. The error stream OCIDs are defined for demo purpose. Please add new error streams or modify the existing ones based on your business requirement. _Please note that, the _ReadDataStreamFunction_ code should be modified if chnages are made in the error stream definitions._
 
 ![Application configuration variables]( /image/ApplicationConfiguration.png "Application configuration variables")
 
@@ -56,7 +57,7 @@ There is one Application, _DataSyncApplication_ . It has the following configura
 
 •	PopulateDataStreamFunction → This Function is used to populate the _DataSyncStream_ . It is invoked when the Source Application/s post data to the REST API exposed using API Gateway. 
 
-•	ProcessDataStreamFunction → This Function reads the _DataSyncStream_  messages and calls the target application’s API. If there is a failure in target application API call, the messages are sent to Error Streams. The Error Streams to use, are configurable at the Function Application level. This gives additional flexibility in defining the error conditions and the streams to which messages are pushed based on the business case. 
+•	ReadDataStreamFunction → This Function reads the _DataSyncStream_  messages and calls the target application’s API. If there is a failure in target application API call, the messages are sent to Error Streams. The Error Streams to use, are configurable at the Function Application level. This gives additional flexibility in defining the error conditions and the streams to which messages are pushed based on the business case. 
 
 •	RetryFunction → This Function retries the messages in Error Streams. This Function is exposed as a public API using an API Gateway. The exposed API can be invoked as a batch process or on an ad-hoc basis, to reprocess the failed messages in any Error Stream. 
 
