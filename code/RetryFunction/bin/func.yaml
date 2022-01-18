@@ -1,6 +1,8 @@
+# Copyright (c)  2022,  Oracle and/or its affiliates.
+# Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 schema_version: 20180708
 name: retryfunction
-version: 0.0.59
+version: 0.0.57
 runtime: java
 build_image: fnproject/fn-java-fdk-build:jdk11-1.0.139
 run_image: fnproject/fn-java-fdk:jre11-1.0.139

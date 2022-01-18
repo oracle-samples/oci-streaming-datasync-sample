@@ -1,0 +1,2 @@
+module ReadDataStreamFunction_1 {
+}
