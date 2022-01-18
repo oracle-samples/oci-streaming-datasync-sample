@@ -47,6 +47,10 @@ The data will be moved from _DataSyncStream_  to Error streams based on the erro
 
 [Functions](https://www.oracle.com/cloud-native/functions/)
 
+There is one Application, _DataSyncApplication_ . It has the following configuration variables.
+
+![Application configuration variables]( /image/ApplicationConfiguration.png "Application configuration variables")
+
 3 Functions are used in this pattern.
 
 
