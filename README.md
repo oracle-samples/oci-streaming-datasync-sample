@@ -106,15 +106,15 @@ https://pf...../stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
 
 ```
 {
-	"streamKey": "123",
+	"streamKey": "key1",
 	"streamMessage": {
-	   "vaultSecretId":"testjan10_2",
+	   "vaultSecretName":"789",  
 	    
-		"targetRestApi": "https://...../admin/soda/latest/orders",
+		"targetRestApi": "https://g4kz1wyoyzrtvap-jsondb.adb.us-ashburn-1.oraclecloudapps.com/ords/admin/soda/latest/orders",
 		"targetRestApiOperation": "POST",
 		"targetRestApiPayload": {
-			"orderid": "10jan",
-			"PO": "po28"
+			"orderid": "18jan",
+			"PO": "18jan"
 		},
 		"targetRestApiHeaders": [{
 				"key": "Content-Type",
@@ -128,14 +128,14 @@ https://pf...../stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
 
 
 
-The json payload contains  _streamKey_ and _streamMessage_ nodes. _streamKey_ is the key to be sent to the _DataSyncStream_ and _streamMessage_ is the value to be sent to the _DataSyncStream_. 
+The json payload contains  _streamKey_ and _streamMessage_ nodes. _streamKey_ is the key to be sent to the _DataSyncStream_ and _streamMessage_ is the value to be sent to the _DataSyncStream_. _streamKey_  can be empty if a key is not required.
 
 The _streamMessage_ section is self-contained i.e.  it contains the target application API in _targetRestApi_ node,  target application’s Rest API Operation in _targetRestApiOperation_ node and a target application’s Rest API Payload in _targetRestApiPayload_ node.
 
-In most cases the target application API will need a security token. If the source and target applications are SSO enabled, one option is to pass this token in the authorization header of the POST call to API Gateway. This token needs to be securely stored for target application API processing later by Functions. For this purpose,  the json payload contains a  node called _vaultSecretId_ which is an id that is unique to every message.  The unique id will be used as a secret name in the Vault and the secret content will be the auth token passed in the Authorization Header of the API Gateway REST API call.
+In most cases the target application API will need a security token. If the source and target applications are SSO enabled, one option is to pass this token in the authorization header of the POST call to API Gateway. This token needs to be securely stored for target application API processing later by Functions. For this purpose,  the json payload contains a  node called _vaultSecretName_ which is an id that is unique to every message having the same auth token.  The unique id will be used as a secret name in the Vault and the secret content will be the auth token passed in the Authorization Header of the API Gateway REST API call. When the auth token in the authorization header changes, a new value should be passed in the _vaultSecretName_ .
 
 
-Step 2.	_PopulateDataStreamFunction_  parses the json payload and creates a new stream message with Key as _streamKey_ and value as _streamMessage_ and pushes it to _DataSyncStream_. It also reads the _vaultSecretId_ and creates a secret in Vault with content as the authorization header token.
+Step 2.	_PopulateDataStreamFunction_  parses the json payload and creates a new stream message with Key as _streamKey_ and value as _streamMessage_ and pushes it to _DataSyncStream_. It also reads the _vaultSecretName_ and creates a secret in Vault with content as the authorization header token.
 
 Step 3.	_DataSyncStream_  is connected to the Function, _ProcessDataStreamFunction_ through a Service Connector. Service Connector invokes this Function when _DataSyncStream_ is populated with new messages.
 
@@ -194,15 +194,15 @@ A sample json payload is given below. You can have POST, PUT and DELETE operaton
 Any REST API headers should be passed as key, value pairs in _targetRestApiHeaders_.
 ```
 {
-	"streamKey": "123",
+	"streamKey": "key1",
 	"streamMessage": {
-	   "vaultSecretId":"testjan10_2",
+	   "vaultSecretName":"789",  
 	    
-		"targetRestApi": "https://...../admin/soda/latest/orders",
+		"targetRestApi": "https://g4kz1wyoyzrtvap-jsondb.adb.us-ashburn-1.oraclecloudapps.com/ords/admin/soda/latest/orders",
 		"targetRestApiOperation": "POST",
 		"targetRestApiPayload": {
-			"orderid": "10jan",
-			"PO": "po28"
+			"orderid": "18jan",
+			"PO": "18jan"
 		},
 		"targetRestApiHeaders": [{
 				"key": "Content-Type",
@@ -234,7 +234,7 @@ Also replace, _stream_ value in the _errormapping_ section with the error stream
 {
  "streamOCIDToRetry":"ocid1.stream.oc1.iad.......",
  		"readOffset": 382,
- 	"readPartition": "0",
+ 	"readPartition": "1",
   "errormapping": 
     [
             {
