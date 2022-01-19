@@ -260,8 +260,7 @@ Sample payload is given below.
 Replace the _streamOCIDToRetry_ with the OCID of the error stream to be retried.
 _readoffset_ is the offset location from where the messages are to be read. _RetryFunction_ will read maximum of 10 offsets at a time and returns the last successfully read offset. So if this API needs multiple invocation, store the return value of the API and make subsequent call by passing the last offset as the _readoffset_ value in the payload.
 
-Also replace, _stream_ value in the _errormapping_ section with the error streams in your OCI environment. If you dont need to specifically map to a particular error stream, keep only the _responsecode_ as _unmapped_ block.
-
+Also replace, _stream_ value in the _errormapping_ section with the error streams in your OCI environment. 
 ```
 {
  "streamOCIDToRetry":"ocid1.stream.oc1.iad.......",
