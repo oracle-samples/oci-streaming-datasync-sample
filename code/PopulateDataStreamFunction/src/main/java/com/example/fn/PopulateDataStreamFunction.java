@@ -6,6 +6,7 @@
 package com.example.fn;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.logging.Logger;
 
@@ -17,11 +18,6 @@ import com.fnproject.fn.api.Headers;
 import com.fnproject.fn.api.QueryParameters;
 import com.fnproject.fn.api.httpgateway.HTTPGatewayContext;
 import com.oracle.bmc.auth.ResourcePrincipalAuthenticationDetailsProvider;
-import com.oracle.bmc.model.BmcException;
-import com.oracle.bmc.secrets.SecretsClient;
-import com.oracle.bmc.secrets.model.Base64SecretBundleContentDetails;
-import com.oracle.bmc.secrets.requests.GetSecretBundleByNameRequest;
-import com.oracle.bmc.secrets.responses.GetSecretBundleByNameResponse;
 import com.oracle.bmc.streaming.StreamAdminClient;
 import com.oracle.bmc.streaming.StreamClient;
 import com.oracle.bmc.streaming.model.PutMessagesDetails;
@@ -36,7 +32,10 @@ import com.oracle.bmc.vault.VaultsClient;
 import com.oracle.bmc.vault.model.Base64SecretContentDetails;
 import com.oracle.bmc.vault.model.CreateSecretDetails;
 import com.oracle.bmc.vault.model.SecretContentDetails;
+import com.oracle.bmc.vault.model.SecretSummary;
 import com.oracle.bmc.vault.requests.CreateSecretRequest;
+import com.oracle.bmc.vault.requests.ListSecretsRequest;
+import com.oracle.bmc.vault.responses.ListSecretsResponse;
 
 public class PopulateDataStreamFunction {
 	private static final Logger LOGGER = Logger.getLogger(PopulateDataStreamFunction.class.getName());
@@ -94,7 +93,7 @@ public class PopulateDataStreamFunction {
 
 		// If secret with the name vaultSecretName is not already present,
 		// create a secret
-		if (getSecretFromVault(vaultSecretName) == null) {
+		if (checkSecretInVault(vaultSecretName)) {
 			createSecretInVault(authorizationHeader, vaultSecretName);
 		}
 
@@ -107,48 +106,21 @@ public class PopulateDataStreamFunction {
 	}
 
 	/**
-	 * @param streamOCID
-	 * @return Stream This method obtains the Stream object from the stream OCID.
-	 */
-	private Stream getStream(String streamOCID) {
-		StreamAdminClient streamAdminClient = StreamAdminClient.builder().build(provider);
-		GetStreamResponse getResponse = streamAdminClient
-				.getStream(GetStreamRequest.builder().streamId(streamOCID).build());
-		return getResponse.getStream();
-	}
-
-	/**
 	 * @param vaultSecretName
-	 * @return String
+	 * @return boolean
 	 * 
-	 *         This method is used to get the auth token from the vault using
-	 *         secretName
+	 *         This method is used to get check if secretname is present already
 	 */
-	private String getSecretFromVault(String vaultSecretName) {
-		SecretsClient secretsClient = new SecretsClient(provider);
-		String secret = null;
-		try {
+	private boolean checkSecretInVault(String vaultSecretName) {
 
-			GetSecretBundleByNameRequest getSecretBundleByNameRequest = GetSecretBundleByNameRequest.builder()
+		VaultsClient vaultClient = new VaultsClient(provider);
 
-					.secretName(vaultSecretName).vaultId(VAULT_OCID).build();
+		ListSecretsRequest listSecretsRequest = ListSecretsRequest.builder().name(vaultSecretName).vaultId(VAULT_OCID)
+				.compartmentId(VAULT_COMPARTMENT_OCID).build();
 
-			// get the secret
-			GetSecretBundleByNameResponse getSecretBundleResponse = secretsClient
-					.getSecretBundleByName(getSecretBundleByNameRequest);
-
-			// get the bundle content details
-			Base64SecretBundleContentDetails base64SecretBundleContentDetails = (Base64SecretBundleContentDetails) getSecretBundleResponse
-					.getSecretBundle().getSecretBundleContent();
-
-			secret = base64SecretBundleContentDetails.getContent();
-		} catch (BmcException e) {
-
-			LOGGER.info("secret not found");
-
-		}
-
-		return secret;
+		ListSecretsResponse listSecretsResponse = vaultClient.listSecrets(listSecretsRequest);
+		List<SecretSummary> items = listSecretsResponse.getItems();
+		return items.isEmpty();
 
 	}
 
@@ -181,6 +153,17 @@ public class PopulateDataStreamFunction {
 				.build();
 		vaultClient.createSecret(createSecretRequest);
 
+	}
+
+	/**
+	 * @param streamOCID
+	 * @return Stream This method obtains the Stream object from the stream OCID.
+	 */
+	private Stream getStream(String streamOCID) {
+		StreamAdminClient streamAdminClient = StreamAdminClient.builder().build(provider);
+		GetStreamResponse getResponse = streamAdminClient
+				.getStream(GetStreamRequest.builder().streamId(streamOCID).build());
+		return getResponse.getStream();
 	}
 
 	/**
