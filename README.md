@@ -175,9 +175,12 @@ https://[host-name]/stream/retry
 ```
 
 
-In the retry payload, specify the stream to retry using  _StreamOCIDToRetry_ node and the offset from where the retry should happen. Consuming messages from a stream requires you to: create a cursor, then use the cursor to read messages. A cursor is a pointer to a location in a stream. One of the option is to use a  specific offset to start the reading of message. This is called an AT_OFFSET cursor. _RetryFunction_ in the sample uses the AT_OFFSET cursor for consuming message and processes maximum of 10 messages at a time. This function also returns the last successfully read offset. This returned offset value can be stored in a location and passed as a value in json payload when the _RetryFunction_ is invoked sequentially for processing large number of messages.
+In the retry payload, specify the stream OCID to retry using  _streamOCIDToRetry_ and the offset from where the retry should happen. 
 
-The payload also contains an errormapping section to specify the streams to which errored messages should be directed to.
+The payload also contains an _errormapping_ section to specify the streams to which errored messages should be directed to. _streamOCIDToRetry_ option in the retry payload gives flexibility of retrying messages in any stream.
+
+_errormapping_ option in the payload gives the flexibility of changing error stream mapping based on the stream which is retried and the expected error scenario.
+
 
 
 ## Installation
@@ -216,7 +219,7 @@ The payload also contains an errormapping section to specify the streams to whic
 
 ### Running the sample
 
-1. To run the sample, get the API Gateway URL corresponding to _sync_ route. It will look like following, https://pfk2...apigateway...../stream/sync?streamOCID=ocid1.stream.oc1......
+1. To run the sample, get the API Gateway URL corresponding to _sync_ route. It will look like following, https://[host-name]/stream/sync?streamOCID=ocid1.stream.oc1......
 Get the OCID of the _DataSyncStream_ and pass it as the query param value of _streamOCID_.
 
 A sample json payload is given below. You can have POST, PUT and DELETE operatons. Change the _targetRESTApi_ and _targetRESTApiOperation_ values based on your target application.
@@ -227,7 +230,7 @@ Any REST API headers should be passed as key, value pairs in _targetRestApiHeade
 	"streamMessage": {
 	   "vaultSecretName":"789",  
 	    
-		"targetRestApi": "https://g4kz1wyoyzrtvap-jsondb.adb.us-ashburn-1.oraclecloudapps.com/ords/admin/soda/latest/orders",
+		"targetRestApi": "https://g....../latest/orders",
 		"targetRestApiOperation": "POST",
 		"targetRestApiPayload": {
 			"orderid": "18jan",
@@ -250,7 +253,7 @@ This API call will push the _streamMessage_ part of the payload to _DataSyncStre
 3. To check for retry and failures, you can pass incorrect values in the payload and see whether the Error Streams got populated correctly. In case of errors, you will also receive notifications in the mail id you entered in Notifications Service. You can also see the errored messages in the Object Storage Bucket.
 
 4. To test a retry in case of failure, call the API Gateway REST API, corresponding to _retry_ route. It will look like this
-https://pfk2e.....apigateway...../stream/retry
+https://[host-name]/stream/retry
 
 Sample payload is given below.
 
@@ -284,6 +287,27 @@ Also replace, _stream_ value in the _errormapping_ section with the error stream
   
 }
 ```
+### Enhancing the sample
+Please note that the sample given is only to demonstrate a pattern and mostly you will need to enhance it to fit into your needs.
+
+While enhancing the sample do consider the following.
+
+•	The function application configuration has a few error stream OCIDs defined. Add new error streams or modify the existing ones based on your requirement. Note that, the _ReadDataStreamFunction_ code should be modified if changes are made in the configuration keys.
+
+•	Change the _errormapping_ section of RetryFunction payload, if needed. The sample makes use of the response code for mapping streams. Change this, if a different type of mapping is required. _RetryFunction_ code also would need change if there is a change in the payload.
+
+•	You will need a process to delete the Vault secrets once they are no longer needed. One option is to write a Function, that can do the clean-up task periodically.
+
+•	_RetryFunction_ processes 10 messages and returns last successfully processed offset. Do change this to a smaller number if processing of each message takes time and there is a possibility of Function to time out.
+
+•	Consuming messages from a stream requires you to: create a cursor, then use the cursor to read messages. A cursor is a pointer to a location in a stream. One of the option is to use a  specific offset to start the reading of message. This is called an AT_OFFSET cursor. 
+RetryFunction in the sample uses the AT_OFFSET cursor for consuming message. It accepts _readoffset_ as the starting offset to read message. It returns the last successfully read offset. To process large number of messages together, store returned offset value in a location and pass it as  value of _readoffset_ in json payload and  invoke _RetryFunction_ sequentially.
+
+•	The sample function handles PUT, POST and DELETE operations. To add or remove operations, change the _ReadDataStreamFunction_ and _RetryFunction_ code. Also change the _targetRestApiOperation_ section of the payload.
+
+•	The source application is responsible for sending unique value in the vaultsecretname for messages having same auth token.
+
+•	It is assumed that the authentication token to invoke the target application’s REST api is passed in the “Authorization” Header. There is a possibility that authorization token stored in Vault expires while retrying the message. This scenario is not considered in the sample. 
 
 
 ## Troubleshooting
