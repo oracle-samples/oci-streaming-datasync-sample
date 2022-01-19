@@ -1,4 +1,4 @@
-# Data Syncing using OCI - Streaming Pattern
+# Data Syncing using Oracle Cloud Infrastructure(OCI) - Streaming Pattern
 
 ## Introduction
 
