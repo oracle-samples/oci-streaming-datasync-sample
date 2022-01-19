@@ -4,12 +4,11 @@
 
 
 There are many instances where there is a need for syncing data from source application/s to target application/s. 
-A sample scenario is a custom mobile app/ web application developed to perform transactions on SaaS data. In this case, the mobile/web application fetches data from SaaS. Mobile/Web application user will perform transactions on  this data and those transactions  should be pushed to SaaS. Here source application is the custom mobile/web application and target application is SaaS. Another case could be the integration of external systems with SaaS, with a need to continuously send data from external systems to SaaS.
-
-Regardless of what the source or target application is, it is ideal to have a middle tier using OCI native services that handles the data flow due to a number of reasons —
+A sample scenario is a custom mobile app/ web application developed to perform transactions on SaaS data. In this case, the mobile/web application fetches data from SaaS. User will perform transactions on  this data and those transactions  should be pushed to SaaS. Here source application is the custom mobile/web application and target application is SaaS. Another case could be the integration of external systems with SaaS, with a need to continuously send data from those external systems to SaaS.
+Regardless of what the source or target application is, it is ideal to have a middle tier using Oracle Cloud Infrastructure (OCI) native services that handles the data flow due to a number of reasons —
 
 1.	Reduced load on the source application in terms of data sync operations, retrials and error handling.
-2.	Ability to persist data and perform retrials in case of failure.
+2.	Ability to persist data at middle tier and perform retrials on this data in case of failure.
 3.	Ability to handle data sync from multiple source & target applications from a single middle tier.
 4.	Ability to transform or filter messages at the middle tier before sending to target application.
 5.	Easy monitoring/reporting of the data flow. 
@@ -19,6 +18,7 @@ Regardless of what the source or target application is, it is ideal to have a mi
 9.	Allow source application to continue with data syncing operation even if target application is down, say for maintenance. 
 10.	Ability to use centralized metrics and logging features.
 11.	Ability to scale the middle tier based on the data load and processing requirements. 
+
 
 
 This solution shows how you can Oracle Cloud Infrastructure (OCI) cloud native services to build a serverless data syncing solution. There are various approaches to build a data sync middle tier using OCI. This one uses Streaming, API Gateway, Functions, Service Connector Hub, Vault, OCI Registry, Notifications and Object Storage.
@@ -47,46 +47,41 @@ The data will be moved from _DataSyncStream_  to Error streams based on the erro
 
 [Functions](https://www.oracle.com/cloud-native/functions/)
 
-There is one Application, _DataSyncApplication_ . It has the following configuration variables.
-They are for defining the error stream OCIDs and Vault OCIDs. The error stream OCIDs are defined for demo purpose. Please add new error streams or modify the existing ones based on your business requirement. _Please note that, the _ReadDataStreamFunction_ code should be modified if chnages are made in the error stream definitions._
+Functions are under an Application, _DataSyncApplication_ . It has the following configuration variables. They are for defining the error stream OCIDs and Vault OCIDs. 
+
 
 ![Application configuration variables]( /image/ApplicationConfiguration.png "Application configuration variables")
 
-3 Functions are used in this pattern.
-
-
-•	PopulateDataStreamFunction → This Function is used to populate the _DataSyncStream_ . It is invoked when the Source Application/s post data to the REST API exposed using API Gateway. 
-
-•	ReadDataStreamFunction → This Function reads the _DataSyncStream_  messages and calls the target application’s API. If there is a failure in target application API call, the messages are sent to Error Streams. The Error Streams to use, are configurable at the Function Application level. This gives additional flexibility in defining the error conditions and the streams to which messages are pushed based on the business case. 
-
-•	RetryFunction → This Function retries the messages in Error Streams. This Function is exposed as a public API using an API Gateway. The exposed API can be invoked as a batch process or on an ad-hoc basis, to reprocess the failed messages in any Error Stream. 
+3 Functions are used in this pattern. 
+• _PopulateDataStreamFunction_ → This Function is used to populate the _DataSyncStream_ . It is invoked when the Source Application/s post data to the REST API exposed using API Gateway. 
+•_ReadDataStreamFunction_ → This Function gets the messages from the _DataSyncStream_  from Service Connector Hub Service and calls the target application’s API. If there is a failure in target application API call, the messages are sent to error streams. The error streams to use, are configurable at the Function Application level as shown above. This gives additional flexibility in defining the error conditions and the streams to which messages are pushed based on your business case. 
+•_RetryFunction_ → This Function retries the messages in error streams. This Function is exposed as a public API using an API Gateway. The exposed API can be invoked as a batch process or on an ad-hoc basis, to reprocess the failed messages in any stream. 
 
 
 [API Gateway](https://docs.oracle.com/en-us/iaas/Content/APIGateway/)
 
 There is one API Gateway used, _SyncDataGateway_. There are 2 routes defined in API Gateway deployment. One is to map the _PopulateDataStreamFunction_ and the other is to map the _RetryFunction_.
 
-[Vault](https://www.oracle.com/in/security/cloud-security/key-management/)
+[Notifications](https://www.oracle.com/devops/notifications/)
 
-A vault called, _DataSyncVault_ is used to store the auth tokens as secrets.
+A topic, _ErrorTopic_ which is a subscription to an Email protocol.
+
+[Object Storage Bucket](https://www.oracle.com/cloud/storage/object-storage/)
+
+An object storage bucket, _stream-error-bucket_ stores errored messages. 
 
 [Service Connector Hub](https://www.oracle.com/devops/service-connector-hub/)
 
 There are 3 Service Connectors used.
 
-•	Service Connector to connect _DataSyncStream_  to Functions, where the target of the Service Connector is set as a Function. 
+•	Service Connector, _DataSyncServiceConector_ to connect _DataSyncStream_ to Functions, where the target of the Service Connector is set as a _ReadDataStreamFunction_.
+•	Service Connector from error streams to Notifications, _UnrecoverableErrorToNotificationsConnector_. It connects to ErrorTopic subscription.
+•	Service Connector from error streams to Object Storage bucket, _UnrecoverableErrorToStorageConnector_ so that a support personnel is notified of the error and can later inspect the failed message in the Object Storage bucket.
 
-•	Service Connector from Error Streams to Notifications called _UnrecoverableErrorToNotificationsConnector_.
 
-•	Service Connector from Error Streams to Object Storage bucket, called _UnrecoverableErrorToStorageConnector_ so that a support personnel is notified of the error and can later inspect the failed message in the Object Storage bucket.
+[Vault](https://www.oracle.com/in/security/cloud-security/key-management/)
 
-[Notifications](https://www.oracle.com/devops/notifications/)
-
-A topic called _ErrorTopic_ is used in sending notifications by email. This topic is configured as a target of the Service Connector.
-
-[Object Storage Bucket](https://www.oracle.com/cloud/storage/object-storage/)
-
-An object storage bucket called _stream-error-bucket_ is used to store errored messages. This bucket is configured as a target of the Service Connector.
+A vault called, _DataSyncVault_ is used to store the auth tokens as secrets.
 
 
 [HashiCorp Terraform](https://www.Terraform.io/)
@@ -103,11 +98,11 @@ An object storage bucket called _stream-error-bucket_ is used to store errored m
 
 ## Process Flow
 
-Step 1.	Source application/s posts data to the REST API exposed by the API Gateway. 
+Step 1.	Source application/s posts data to the REST API exposed by the API Gateway. The API gateway  has an API deployment that invokes the Function _PopulateDataStreamFunction_.
 
 The REST API call to API Gateway and sample json payload is given below. 
-REST API will have a query param, streamOCID. This is the OCID of the _DataSyncStream_.
-https://pf...../stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
+https://[hostname]/stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
+
 
 ```
 {
@@ -133,22 +128,51 @@ https://pf...../stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
 
 
 
-The json payload contains  _streamKey_ and _streamMessage_ nodes. _streamKey_ is the key to be sent to the _DataSyncStream_ and _streamMessage_ is the value to be sent to the _DataSyncStream_. _streamKey_  can be empty if a key is not required.
+The json payload contains  _streamKey_ and _streamMessage_ nodes. _streamKey_ is the key to be sent to the _DataSyncStream_ and _streamMessage_ is the value to be sent to the _DataSyncStream_. _streamKey_  can be empty if a key is not required while populating streams.
 
-The _streamMessage_ section is self-contained i.e.  it contains the target application API in _targetRestApi_ node,  target application’s Rest API Operation in _targetRestApiOperation_ node and a target application’s Rest API Payload in _targetRestApiPayload_ node.
+The _streamMessage_ section  is self-contained i.e.  it contains the target application API in _targetRestApi_ node,  target application’s Rest API operation in _targetRestApiOperation_ node and a target application’s Rest API payload in _targetRestApiPayload_ node. Headers for target REST API call should be sent as key , value pair in _targetRestApiHeaders_ node.
 
-In most cases the target application API will need a security token. If the source and target applications are SSO enabled, one option is to pass this token in the authorization header of the POST call to API Gateway. This token needs to be securely stored for target application API processing later by Functions. For this purpose,  the json payload contains a  node called _vaultSecretName_ which is an id that is unique to every message having the same auth token.  The unique id will be used as a secret name in the Vault and the secret content will be the auth token passed in the Authorization Header of the API Gateway REST API call. When the auth token in the authorization header changes, a new value should be passed in the _vaultSecretName_ .
+In most cases the target application API will need a security token. Usually this token is passed in the authorization header of the POST call to API Gateway. This token needs to be securely stored for target application API processing later by Functions. For this purpose,  the json payload contains a  node called _vaultSecretName_ which is an id that should be unique to messages that has the same auth token passed in authorization header.  The unique id will be used as a secret name in the Vault and the secret content will be the auth token passed in the authorization header. When the auth token in the authorization header changes, a new value should be passed in the _vaultSecretName_ for those messages.
 
 
-Step 2.	_PopulateDataStreamFunction_  parses the json payload and creates a new stream message with Key as _streamKey_ and value as _streamMessage_ and pushes it to _DataSyncStream_. It also reads the _vaultSecretName_ and creates a secret in Vault with content as the authorization header token.
+Step 2.	_PopulateDataStreamFunction_  parses the json payload and creates a new stream message with Key as _streamKey_ and value as _streamMessage_ and pushes it to _DataSyncStream_. It also reads the _vaultSecretName_ and creates a secret in Vault with content as the authorization header token and name as _vaultSecretName_.
 
-Step 3.	_DataSyncStream_  is connected to the Function, _ProcessDataStreamFunction_ through a Service Connector. Service Connector invokes this Function when _DataSyncStream_ is populated with new messages.
+Step 3.	_DataSyncStream_  is connected to the Function, _ReadDataStreamFunction_ through a Service Connector. Service Connector invokes this Function when _DataSyncStream_ is populated with new messages.
 
-Step 4.	_ProcessDataStreamFunction_ processes the messages by reading the _targetRestApiPayload_  section in the payload and then invokes the target application API and operation. If an error occurs, say if the server is unavailable Function pushes the message to Error streams defined in the Function Application configuration variables.
+Step 4. _ReadDataStreamFunction_ processes the messages in DataSyncStream by reading the _targetRestApiPayload_ section and then invokes the target application API. If an error occurs, say if the server is unavailable Function pushes the message to error streams defined in the Function Application configuration variables.
 
 
 Step 5.	Lastly there is an option to retry the messages in Error streams using an API Gateway API, that exposes the _RetryFunction_.
 
+The sample REST API call and  payload will look like this.
+
+https://[host-name]/stream/retry
+
+```
+{
+ "streamOCIDToRetry":"ocid1.stream.oc1…..",
+ 		"readOffset": 393,
+ 	"readPartition": "0",
+  "errormapping": 
+    [
+            {
+                "responsecode": "404",
+                "stream": "ocid1.stream.oc1.iad.a…."
+            },
+            {
+                "responsecode": "503",
+                "stream": "ocid1.stream.oc1.iad.a…"
+            }      
+            ,
+            {
+                "responsecode": "unmapped",
+                "stream": "ocid1.stream.oc1.iad…."
+            } 
+        ]
+   
+  
+}
+```
 
 
 In the retry payload, specify the stream to retry using  _StreamOCIDToRetry_ node and the offset from where the retry should happen. Consuming messages from a stream requires you to: create a cursor, then use the cursor to read messages. A cursor is a pointer to a location in a stream. One of the option is to use a  specific offset to start the reading of message. This is called an AT_OFFSET cursor. _RetryFunction_ in the sample uses the AT_OFFSET cursor for consuming message and processes maximum of 10 messages at a time. This function also returns the last successfully read offset. This returned offset value can be stored in a location and passed as a value in json payload when the _RetryFunction_ is invoked sequentially for processing large number of messages.
