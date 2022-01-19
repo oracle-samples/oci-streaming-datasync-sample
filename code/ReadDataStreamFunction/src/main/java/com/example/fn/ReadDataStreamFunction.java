@@ -1,13 +1,12 @@
 //Copyright (c)  2021,  Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
-//This Function reads the DataSyncStream  messages and calls the target application’s API.
+
+//This Function gets the messages from  the DataSyncStream   calls the target application’s API.
 //If there is a failure in target application API call, the messages are sent to Error Streams. 
-//The Error Streams to use, are configurable at the Function Application level. This gives additional 
-//flexibility in defining the error conditions and the streams to which messages are pushed based on the business case.
+//The Error Streams to use, are configurable at the Function Application level. 
 
 package com.example.fn;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -62,15 +61,10 @@ public class ReadDataStreamFunction {
 
 	/**
 	 * @param incomingMessage
-	 * @throws IOException
-	 * @throws InterruptedException
 	 * 
-	 *                              This is the entry point of the function
-	 *                              execution.
+	 *                        This is the entry point of the function execution.
 	 */
 	public void handleRequest(String incomingMessage) {
-
-		LOGGER.info("incomingMessage****" + incomingMessage);
 
 		ObjectMapper objectMapper = new ObjectMapper();
 		// Read the stream messages
@@ -100,11 +94,9 @@ public class ReadDataStreamFunction {
 
 	/**
 	 * @param streamMessage
-	 * @param streamKey
-	 * @throws IOException
-	 * @throws InterruptedException This method parses the incoming message and
-	 *                              processes it based on the targetRestApiOperation
-	 *                              defined in the message
+	 * @param streamKey     This method parses the incoming message and processes it
+	 *                      based on the targetRestApiOperation defined in the
+	 *                      message
 	 */
 	private void processMessage(String streamMessage, String streamKey) {
 		HttpClient httpClient = HttpClient.newHttpClient();
@@ -117,15 +109,12 @@ public class ReadDataStreamFunction {
 		JsonNode jsonNode;
 		try {
 			jsonNode = objectMapper.readTree(streamMessage);
+			// parse the incoming message
 
-			// parse the message and get the vault secret OCID where the authorization
-			// header token is stored
-			// REST API targetRestApi of the target application and the REST
-			// targetRestApiOperation
 			String vaultSecretName = jsonNode.get("vaultSecretName").asText();
 			String targetRestApi = jsonNode.get("targetRestApi").asText();
 			String targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
-			// Get the json payload section
+
 			if (jsonNode.get("targetRestApiPayload") != null) {
 				targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
 			}
@@ -138,7 +127,7 @@ public class ReadDataStreamFunction {
 				httpHeaders.put(headerNode.get("key").asText(), headerNode.get("value").asText());
 
 			}
-
+			// process the messages based on the operation
 			switch (targetRestApiOperation) {
 
 			case "PUT": {
@@ -171,22 +160,21 @@ public class ReadDataStreamFunction {
 			HttpResponse<InputStream> response = httpClient.send(request, BodyHandlers.ofInputStream());
 			// get the status code
 			responseStatusCode = response.statusCode();
+
+			// Populate error streams in case of a failure
+
 			if (Family.familyOf(responseStatusCode) == Family.SERVER_ERROR) {
 
 				if (responseStatusCode == 503) {
 
-					Stream errorStream = getStream(SERVICEUNAVAILABLE_ERROR_STREAM_OCID);
-					populateErrorStream(streamMessage, streamKey, errorStream, SERVICEUNAVAILABLE_ERROR_STREAM_OCID);
+					populateErrorStream(streamMessage, streamKey, SERVICEUNAVAILABLE_ERROR_STREAM_OCID);
 				} else if (responseStatusCode == 500) {
 
-					Stream errorStream = getStream(INTERNALSERVER_ERROR_STREAM_OCID);
-					populateErrorStream(streamMessage, streamKey, errorStream, INTERNALSERVER_ERROR_STREAM_OCID);
+					populateErrorStream(streamMessage, streamKey, INTERNALSERVER_ERROR_STREAM_OCID);
 
 				} else {
 
-					Stream errorStream = getStream(DEFAULT_ERROR_STREAM_OCID);
-					populateErrorStream(streamMessage, streamKey, errorStream, DEFAULT_ERROR_STREAM_OCID);
-					LOGGER.info("Inside populate default error stream" + DEFAULT_ERROR_STREAM_OCID);
+					populateErrorStream(streamMessage, streamKey, DEFAULT_ERROR_STREAM_OCID);
 
 				}
 
@@ -194,27 +182,21 @@ public class ReadDataStreamFunction {
 
 				if (responseStatusCode == 400) {
 
-					Stream errorStream = getStream(UNRECOVERABLE_ERROR_STREAM_OCID);
-					populateErrorStream(streamMessage, streamKey, errorStream, UNRECOVERABLE_ERROR_STREAM_OCID);
+					populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID);
 				}
 
 				else {
 
-					Stream errorStream = getStream(DEFAULT_ERROR_STREAM_OCID);
-					populateErrorStream(streamMessage, streamKey, errorStream, DEFAULT_ERROR_STREAM_OCID);
-					LOGGER.info("Inside populate default error stream" + DEFAULT_ERROR_STREAM_OCID);
+					populateErrorStream(streamMessage, streamKey, DEFAULT_ERROR_STREAM_OCID);
 
 				}
 
 			}
 		} catch (Exception e) {
 
-			e.printStackTrace();
+			LOGGER.severe("Message failed with exception is addded to error stream");
 
-			LOGGER.severe("Message failed with exception is addded to error stream" + streamMessage);
-
-			Stream errorStream = getStream(UNRECOVERABLE_ERROR_STREAM_OCID);
-			populateErrorStream(streamMessage, streamKey, errorStream, UNRECOVERABLE_ERROR_STREAM_OCID);
+			populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID);
 		}
 
 	}
@@ -271,7 +253,10 @@ public class ReadDataStreamFunction {
 
 	/**
 	 * @param streamOCID
-	 * @return Stream This method obtains the Stream object from the stream OCID.
+	 * @return Stream
+	 * 
+	 * 
+	 *         This method obtains the Stream object from the stream OCID.
 	 */
 	private Stream getStream(String streamOCID) {
 		StreamAdminClient streamAdminClient = StreamAdminClient.builder().build(provider);
@@ -284,14 +269,13 @@ public class ReadDataStreamFunction {
 	/**
 	 * @param streamMessage
 	 * @param streamKey
-	 * @param errorStream
 	 * @param errorStreamOCID
 	 * 
 	 *                        This method is used to populate the error stream with
 	 *                        the failed message
 	 */
-	private void populateErrorStream(String streamMessage, String streamKey, Stream errorStream,
-			String errorStreamOCID) {
+	private void populateErrorStream(String streamMessage, String streamKey, String errorStreamOCID) {
+
 		// Construct the stream message
 
 		PutMessagesDetails messagesDetails = PutMessagesDetails.builder().messages(Arrays.asList(
@@ -303,12 +287,12 @@ public class ReadDataStreamFunction {
 
 		// Read the response
 
-		PutMessagesResponse putResponse = StreamClient.builder().stream(errorStream).build(provider)
+		PutMessagesResponse putResponse = StreamClient.builder().stream(getStream(errorStreamOCID)).build(provider)
 				.putMessages(putRequest);
 		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
 			if (entry.getError() != null) {
 
-				LOGGER.info("Put message error " + entry.getErrorMessage());
+				LOGGER.severe("Put message error " + entry.getErrorMessage());
 			} else {
 
 				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition());

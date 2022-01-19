@@ -1,5 +1,6 @@
 //Copyright (c)  2022,  Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
+
 //This Function is used to populate the DataSyncStream . 
 //It is invoked when the Source Application/s post data to the REST API exposed using API Gateway.
 package com.example.fn;
@@ -7,8 +8,6 @@ package com.example.fn;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.logging.Logger;
-
-import org.apache.commons.lang3.StringUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -18,6 +17,7 @@ import com.fnproject.fn.api.Headers;
 import com.fnproject.fn.api.QueryParameters;
 import com.fnproject.fn.api.httpgateway.HTTPGatewayContext;
 import com.oracle.bmc.auth.ResourcePrincipalAuthenticationDetailsProvider;
+import com.oracle.bmc.model.BmcException;
 import com.oracle.bmc.secrets.SecretsClient;
 import com.oracle.bmc.secrets.model.Base64SecretBundleContentDetails;
 import com.oracle.bmc.secrets.requests.GetSecretBundleByNameRequest;
@@ -37,7 +37,6 @@ import com.oracle.bmc.vault.model.Base64SecretContentDetails;
 import com.oracle.bmc.vault.model.CreateSecretDetails;
 import com.oracle.bmc.vault.model.SecretContentDetails;
 import com.oracle.bmc.vault.requests.CreateSecretRequest;
-import com.oracle.bmc.vault.responses.CreateSecretResponse;
 
 public class PopulateDataStreamFunction {
 	private static final Logger LOGGER = Logger.getLogger(PopulateDataStreamFunction.class.getName());
@@ -47,13 +46,10 @@ public class PopulateDataStreamFunction {
 	private static final String VAULT_COMPARTMENT_OCID = System.getenv().get("vault_compartment_ocid");
 	private static final String VAULT_KEY_OCID = System.getenv().get("vault_key_ocid");
 
-	public PopulateDataStreamFunction() {
-
-	}
-
 	/**
 	 * @param httpGatewayContext
 	 * @param requestBody
+	 * @return String
 	 * @throws JsonMappingException
 	 * @throws JsonProcessingException
 	 * 
@@ -63,7 +59,7 @@ public class PopulateDataStreamFunction {
 	public String handleRequest(HTTPGatewayContext httpGatewayContext, String requestBody)
 			throws JsonMappingException, JsonProcessingException {
 
-		String streamKey, streamMessage, vaultSecretName, vaultSecretOCID = "";
+		String streamKey, streamMessage, vaultSecretName = "";
 
 		QueryParameters queryparams = httpGatewayContext.getQueryParameters();
 		// Read the request header to get the authorization header value.
@@ -95,17 +91,17 @@ public class PopulateDataStreamFunction {
 		JsonNode streamMessageNode = objectMapper.readTree(streamMessage);
 
 		vaultSecretName = streamMessageNode.get("vaultSecretName").asText();
+
+		// If secret with the name vaultSecretName is not already present,
+		// create a secret
 		if (getSecretFromVault(vaultSecretName) == null) {
 			createSecretInVault(authorizationHeader, vaultSecretName);
 		}
 
-		// Get the Stream
-		Stream stream = getStream(streamOCIDValue);
-
 		// store message in Stream
 
-		storeMessageinStream(streamMessage, streamOCIDValue, streamKey, stream);
-		// return the newly created secret OCID
+		storeMessageinStream(streamMessage, streamOCIDValue, streamKey);
+
 		return "success";
 
 	}
@@ -130,20 +126,27 @@ public class PopulateDataStreamFunction {
 	 */
 	private String getSecretFromVault(String vaultSecretName) {
 		SecretsClient secretsClient = new SecretsClient(provider);
+		String secret = null;
+		try {
 
-		GetSecretBundleByNameRequest getSecretBundleByNameRequest = GetSecretBundleByNameRequest.builder()
+			GetSecretBundleByNameRequest getSecretBundleByNameRequest = GetSecretBundleByNameRequest.builder()
 
-				.secretName(vaultSecretName).vaultId(VAULT_OCID).build();
+					.secretName(vaultSecretName).vaultId(VAULT_OCID).build();
 
-		// get the secret
-		GetSecretBundleByNameResponse getSecretBundleResponse = secretsClient
-				.getSecretBundleByName(getSecretBundleByNameRequest);
+			// get the secret
+			GetSecretBundleByNameResponse getSecretBundleResponse = secretsClient
+					.getSecretBundleByName(getSecretBundleByNameRequest);
 
-		// get the bundle content details
-		Base64SecretBundleContentDetails base64SecretBundleContentDetails = (Base64SecretBundleContentDetails) getSecretBundleResponse
-				.getSecretBundle().getSecretBundleContent();
+			// get the bundle content details
+			Base64SecretBundleContentDetails base64SecretBundleContentDetails = (Base64SecretBundleContentDetails) getSecretBundleResponse
+					.getSecretBundle().getSecretBundleContent();
 
-		String secret = base64SecretBundleContentDetails.getContent();
+			secret = base64SecretBundleContentDetails.getContent();
+		} catch (BmcException e) {
+
+			LOGGER.info("secret not found");
+
+		}
 
 		return secret;
 
@@ -151,19 +154,18 @@ public class PopulateDataStreamFunction {
 
 	/**
 	 * @param authorizationHeader
-	 * @return String
+	 * @param vaultSecretName
 	 * 
-	 *         This method is to store the auth token in a vault. It generates a
-	 *         secret with content as auth token and name as the vaultSecretName.
-	 *         The secret is stored in the vault in the compartment specified in
-	 *         application configuration variables. The secret encryption key used
-	 *         is also specified in the application configuration variable. After
-	 *         the creation of the secret, the OCID of the newly created secret is
-	 *         returned. This OCID will be updated in the vaultSecretOCID node of
-	 *         the json payload and later will be used for reading the secret
-	 *         content by other functions.
+	 *                            This method is to store the auth token in a vault.
+	 *                            It generates a secret with content as auth token
+	 *                            and name as the vaultSecretName. The secret is
+	 *                            stored in the vault in the compartment specified
+	 *                            in application configuration variables. The secret
+	 *                            encryption key used is also specified in the
+	 *                            application configuration variable.
 	 */
-	private String createSecretInVault(String authorizationHeader, String vaultSecretName) {
+
+	private void createSecretInVault(String authorizationHeader, String vaultSecretName) {
 		VaultsClient vaultClient = new VaultsClient(provider);
 //Create a new secret with content as the authorization header value and name as vaultSecretName
 		Base64SecretContentDetails base64SecretContentDetails = Base64SecretContentDetails.builder()
@@ -177,21 +179,21 @@ public class PopulateDataStreamFunction {
 				.secretContent(base64SecretContentDetails).build();
 		CreateSecretRequest createSecretRequest = CreateSecretRequest.builder().createSecretDetails(createSecretDetails)
 				.build();
-		CreateSecretResponse createSecretResponse = vaultClient.createSecret(createSecretRequest);
-
-		// After the secret is created get its OCID as this value is needed by other
-		// functions to read the secret
-		return createSecretResponse.getSecret().getId();
+		vaultClient.createSecret(createSecretRequest);
 
 	}
 
 	/**
 	 * @param message
-	 * @param streamOCID This method stores the message in the Stream
+	 * @param streamOCID
+	 * @param streamKey
+	 * 
+	 * 
+	 *                   This method stores the message in the Stream
 	 */
-	private void storeMessageinStream(String message, String streamOCID, String streamKey, Stream stream) {
-		String result = null;
-		StreamClient streamClient = StreamClient.builder().stream(stream).build(provider);
+	private void storeMessageinStream(String message, String streamOCID, String streamKey) {
+
+		StreamClient streamClient = StreamClient.builder().stream(getStream(streamOCID)).build(provider);
 
 		PutMessagesDetails messagesDetails = PutMessagesDetails.builder()
 				.messages(Arrays.asList(
@@ -199,23 +201,17 @@ public class PopulateDataStreamFunction {
 				.build();
 		PutMessagesRequest putRequest = PutMessagesRequest.builder().streamId(streamOCID)
 				.putMessagesDetails(messagesDetails).build();
+
 		PutMessagesResponse putResponse = streamClient.putMessages(putRequest);
 		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
 			if (entry.getError() != null) {
-				result = "Put message error " + entry.getErrorMessage();
-				LOGGER.severe(result);
+
+				LOGGER.severe("Put message error " + entry.getErrorMessage());
 			} else {
-				result = "Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition();
-				LOGGER.info(result);
+
+				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition());
 			}
 		}
-		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
-			if (StringUtils.isNotBlank(entry.getError())) {
-				LOGGER.severe(String.format("Error: ", entry.getError(), entry.getErrorMessage()));
-			} else {
-				LOGGER.info(String.format("Published message to partition , offset .", entry.getPartition(),
-						entry.getOffset()));
-			}
-		}
+
 	}
 }

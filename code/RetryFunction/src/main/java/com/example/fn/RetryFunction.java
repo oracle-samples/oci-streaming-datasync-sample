@@ -1,12 +1,14 @@
 //Copyright (c)  2021,  Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
-//This Function retries the messages in Error Streams. This Function is exposed as a public API using an API Gateway. 
-//The exposed API can be invoked as a batch process or on an ad-hoc basis, to reprocess the failed messages in any Error Stream.
+
+//This Function retries the messages in streams. This Function is exposed as a public API using an API Gateway. 
+//The exposed API can be invoked as a batch process or on an ad-hoc basis,
+//to reprocess the  messages in any  Stream.
+
 package com.example.fn;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,7 +24,6 @@ import java.util.logging.Logger;
 import javax.ws.rs.core.Response.Status.Family;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.bmc.auth.ResourcePrincipalAuthenticationDetailsProvider;
@@ -53,18 +54,13 @@ public class RetryFunction {
 	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
 			.builder().build();
 	private static final String VAULT_OCID = System.getenv().get("vault_ocid");
-
-	public RetryFunction() {
-
-	}
+	private static final int NO_OF_MESSAGES_TO_PROCESS = 10;
 
 	/**
 	 * @param requestBody
-	 * @return
-	 * @throws JsonProcessingException
-	 * @throws JsonMappingException
-	 * @throws IOException
-	 * @throws InterruptedException
+	 * @return long
+	 * 
+	 *         This is the entry point of the Function call
 	 */
 	public long handleRequest(String requestBody)
 
@@ -98,14 +94,18 @@ public class RetryFunction {
 			errorStreamMapping.put(node.get("responsecode").asText(), node.get("stream").asText());
 
 		}
-
+		// Get the Stream to retry
 		Stream retryStream = getStream(streamOCIDToRetry);
 
 		StreamClient streamClient = StreamClient.builder().stream(retryStream).build(provider);
 
-		String cursor = getSourceStreamCursor(streamClient, readPartition, streamOCIDToRetry, readOffset);
+		// Get the cursor
 
-		return readMessagesFromSourceStream(cursor, streamClient, streamOCIDToRetry, errorStreamMapping);
+		String cursor = getStreamCursor(streamClient, readPartition, streamOCIDToRetry, readOffset);
+
+		// Read messages
+
+		return readMessagesFromStream(cursor, streamClient, streamOCIDToRetry, errorStreamMapping);
 
 	}
 
@@ -123,12 +123,16 @@ public class RetryFunction {
 	}
 
 	/**
+	 * @param streamClient
+	 * @param readPartition
+	 * @param streamOCIDToRetry
+	 * @param readOffset
 	 * @return String
 	 * 
 	 *         This method creates a Stream message cursor using an offset cursor
 	 *         type
 	 */
-	private String getSourceStreamCursor(StreamClient streamClient, String readPartition, String streamOCIDToRetry,
+	private String getStreamCursor(StreamClient streamClient, String readPartition, String streamOCIDToRetry,
 			long readOffset) {
 
 		CreateCursorDetails cursorDetails = CreateCursorDetails.builder().partition(readPartition).type(Type.AtOffset)
@@ -144,20 +148,20 @@ public class RetryFunction {
 
 	/**
 	 * @param cursor
-	 * @return
-	 * @throws IOException
-	 * @throws InterruptedException
+	 * @param streamClient
+	 * @param streamOCIDToRetry
+	 * @param errorStreamMapping
+	 * @return long
 	 * 
-	 *                              This method is used to read the messages from
-	 *                              the source stream based on the offset
+	 *         This method is used to read the messages from stream
 	 */
-	private long readMessagesFromSourceStream(String cursor, StreamClient streamClient, String streamOCIDToRetry,
+	private long readMessagesFromStream(String cursor, StreamClient streamClient, String streamOCIDToRetry,
 			Map<String, String> errorStreamMapping) {
 
 		long latestOffset = 0;
 
 		GetMessagesRequest getRequest = GetMessagesRequest.builder().streamId(streamOCIDToRetry).cursor(cursor)
-				.limit(10).build();
+				.limit(NO_OF_MESSAGES_TO_PROCESS).build();
 
 		GetMessagesResponse getResponse = streamClient.getMessages(getRequest);
 
@@ -184,14 +188,9 @@ public class RetryFunction {
 	/**
 	 * @param streamMessage
 	 * @param streamKey
-	 * @throws IOException
-	 * @throws InterruptedException
-	 * 
-	 *                              This method parses the incoming message and
-	 *                              processes it
-	 * 
-	 **/
-
+	 * @param errorStreamMapping This method parses the incoming message and
+	 *                           processes it.
+	 */
 	private void processMessage(String streamMessage, String streamKey, Map<String, String> errorStreamMapping) {
 
 		String targetRestApiPayload = null;
@@ -253,7 +252,7 @@ public class RetryFunction {
 			response = httpClient.send(request, BodyHandlers.ofInputStream());
 
 			responseStatusCode = response.statusCode();
-			// Get the error stream OCID mapped to the REST response error code
+
 			if ((Family.familyOf(responseStatusCode) == Family.SERVER_ERROR)
 					|| (Family.familyOf(responseStatusCode) == Family.CLIENT_ERROR)) {
 
@@ -352,7 +351,7 @@ public class RetryFunction {
 		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
 			if (entry.getError() != null) {
 
-				LOGGER.info("Put message error " + entry.getErrorMessage());
+				LOGGER.severe("Put message error " + entry.getErrorMessage());
 			} else {
 
 				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition());
