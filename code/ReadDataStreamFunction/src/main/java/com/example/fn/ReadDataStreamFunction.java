@@ -86,7 +86,16 @@ public class ReadDataStreamFunction {
 
 			String decodedMessageValue = new String(Base64.getDecoder().decode(streamMessage.getBytes()));
 
-			processMessage(decodedMessageValue, streamKey);
+			try {
+
+				processMessage(decodedMessageValue, streamKey);
+
+			} catch (Exception ex) {
+
+				LOGGER.severe("Message failed with exception " + ex.getLocalizedMessage());
+
+				populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID);
+			}
 
 		}
 
@@ -98,7 +107,7 @@ public class ReadDataStreamFunction {
 	 *                      based on the targetRestApiOperation defined in the
 	 *                      message
 	 */
-	private void processMessage(String streamMessage, String streamKey) {
+	private void processMessage(String streamMessage, String streamKey) throws Exception {
 		HttpClient httpClient = HttpClient.newHttpClient();
 
 		String targetRestApiPayload = "";
@@ -106,97 +115,92 @@ public class ReadDataStreamFunction {
 		int responseStatusCode = 0;
 		ObjectMapper objectMapper = new ObjectMapper();
 		HttpRequest request = null;
-		JsonNode jsonNode;
-		try {
-			jsonNode = objectMapper.readTree(streamMessage);
-			// parse the incoming message
+		JsonNode jsonNode = null;
 
-			String vaultSecretName = jsonNode.get("vaultSecretName").asText();
-			String targetRestApi = jsonNode.get("targetRestApi").asText();
-			String targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
+		jsonNode = objectMapper.readTree(streamMessage);
+		// parse the incoming message
 
-			if (jsonNode.get("targetRestApiPayload") != null) {
-				targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
-			}
-			// Get the targetRestApiHeaders section of the json payload
-			JsonNode headersNode = jsonNode.get("targetRestApiHeaders");
-			Map<String, String> httpHeaders = new HashMap<>();
+		String vaultSecretName = jsonNode.get("vaultSecretName").asText();
+		String targetRestApi = jsonNode.get("targetRestApi").asText();
+		String targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
 
-			for (int i = 0; i < headersNode.size(); i++) {
-				JsonNode headerNode = headersNode.get(i);
-				httpHeaders.put(headerNode.get("key").asText(), headerNode.get("value").asText());
+		if (jsonNode.get("targetRestApiPayload") != null) {
+			targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
+		}
+		// Get the targetRestApiHeaders section of the json payload
+		JsonNode headersNode = jsonNode.get("targetRestApiHeaders");
+		Map<String, String> httpHeaders = new HashMap<>();
 
-			}
-			// process the messages based on the operation
-			switch (targetRestApiOperation) {
+		for (int i = 0; i < headersNode.size(); i++) {
+			JsonNode headerNode = headersNode.get(i);
+			httpHeaders.put(headerNode.get("key").asText(), headerNode.get("value").asText());
 
-			case "PUT": {
-				Builder builder = HttpRequest.newBuilder()
-						.PUT(HttpRequest.BodyPublishers.ofString(targetRestApiPayload)).uri(URI.create(targetRestApi));
+		}
+		// process the messages based on the operation
+		switch (targetRestApiOperation) {
 
-				request = constructHttpRequest(builder, httpHeaders, vaultSecretName);
+		case "PUT": {
+			Builder builder = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(targetRestApiPayload))
+					.uri(URI.create(targetRestApi));
+
+			request = constructHttpRequest(builder, httpHeaders, vaultSecretName);
+			break;
+
+		}
+
+		case "POST": {
+
+			Builder builder = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(targetRestApiPayload))
+					.uri(URI.create(targetRestApi));
+
+			request = constructHttpRequest(builder, httpHeaders, vaultSecretName);
+			break;
+		}
+
+		case "DELETE": {
+			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(targetRestApi));
+
+			request = constructHttpRequest(builder, httpHeaders, vaultSecretName);
+		}
+		default:
+
+			throw new Exception("Unhandled operation in targetRestApiOperation node in the message ");
+		}
+
+		// make the http request call
+
+		HttpResponse<InputStream> response = httpClient.send(request, BodyHandlers.ofInputStream());
+		// get the status code
+		responseStatusCode = response.statusCode();
+
+		// Populate error streams in case of a failure
+		String errorStreamOCID = "";
+
+		if ((Family.familyOf(responseStatusCode) == Family.SERVER_ERROR)
+				|| (Family.familyOf(responseStatusCode) == Family.CLIENT_ERROR)) {
+
+			switch (responseStatusCode) {
+
+			case 503: {
+				errorStreamOCID = SERVICEUNAVAILABLE_ERROR_STREAM_OCID;
 				break;
-
 			}
-
-			case "POST": {
-
-				Builder builder = HttpRequest.newBuilder()
-						.POST(HttpRequest.BodyPublishers.ofString(targetRestApiPayload)).uri(URI.create(targetRestApi));
-
-				request = constructHttpRequest(builder, httpHeaders, vaultSecretName);
+			case 500: {
+				errorStreamOCID = INTERNALSERVER_ERROR_STREAM_OCID;
 				break;
 			}
 
-			case "DELETE": {
-				Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(targetRestApi));
-
-				request = constructHttpRequest(builder, httpHeaders, vaultSecretName);
-			}
+			case 400: {
+				errorStreamOCID = UNRECOVERABLE_ERROR_STREAM_OCID;
+				break;
 			}
 
-			// make the http request call
-
-			HttpResponse<InputStream> response = httpClient.send(request, BodyHandlers.ofInputStream());
-			// get the status code
-			responseStatusCode = response.statusCode();
-
-			// Populate error streams in case of a failure
-
-			if (Family.familyOf(responseStatusCode) == Family.SERVER_ERROR) {
-
-				if (responseStatusCode == 503) {
-
-					populateErrorStream(streamMessage, streamKey, SERVICEUNAVAILABLE_ERROR_STREAM_OCID);
-				} else if (responseStatusCode == 500) {
-
-					populateErrorStream(streamMessage, streamKey, INTERNALSERVER_ERROR_STREAM_OCID);
-
-				} else {
-
-					populateErrorStream(streamMessage, streamKey, DEFAULT_ERROR_STREAM_OCID);
-
-				}
-
-			} else if (Family.familyOf(responseStatusCode) == Family.CLIENT_ERROR) {
-
-				if (responseStatusCode == 400) {
-
-					populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID);
-				}
-
-				else {
-
-					populateErrorStream(streamMessage, streamKey, DEFAULT_ERROR_STREAM_OCID);
-
-				}
+			default:
+				errorStreamOCID = DEFAULT_ERROR_STREAM_OCID;
 
 			}
-		} catch (Exception e) {
 
-			LOGGER.severe("Message failed with exception is addded to error stream");
-
-			populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID);
+			populateErrorStream(streamMessage, streamKey, errorStreamOCID);
 		}
 
 	}
