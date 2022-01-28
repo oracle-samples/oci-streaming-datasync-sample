@@ -28,6 +28,7 @@ import javax.ws.rs.core.Response.Status.Family;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fnproject.fn.api.httpgateway.HTTPGatewayContext;
 import com.oracle.bmc.auth.ResourcePrincipalAuthenticationDetailsProvider;
 import com.oracle.bmc.model.BmcException;
 import com.oracle.bmc.secrets.SecretsClient;
@@ -57,67 +58,75 @@ public class RetryFunction {
 	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
 			.builder().build();
 	private static final String VAULT_OCID = System.getenv().get("vault_ocid");
-	private static final int NO_OF_MESSAGES_TO_PROCESS = 10;
 
 	/**
 	 * @param requestBody
-	 * @return long
+	 * @return String
 	 * 
 	 *         This is the entry point of the Function call
 	 */
-	public String handleRequest(String requestBody)
+	public String handleRequest(String requestBody, HTTPGatewayContext httpGatewayContext)
 
 	{
 
 		Map<String, String> errorStreamMapping = new HashMap<>();
 		ObjectMapper mapper = new ObjectMapper();
-		JsonNode jsonNode = null;
+		String processStatus = "";
+
 		try {
-			jsonNode = mapper.readTree(requestBody);
-		} catch (JsonProcessingException e) {
-			LOGGER.severe("Retry Failed due to JsonProcessingException");
+			JsonNode jsonNode = mapper.readTree(requestBody);
+
+			// Stream to retry
+
+			String streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
+			// Stream Offset to start the reading
+
+			int readAfterOffset = jsonNode.path("readAfterOffset").asInt();
+			// Stream partition to read
+			String readPartition = jsonNode.path("readPartition").asText();
+
+			// no of messages to process
+
+			int noOfMessagesToProcess = jsonNode.path("noOfMessagesToProcess").asInt();
+
+			// Get the error mapping nodes to get the error code and error stream ocid
+			// mappping to use
+
+			JsonNode errorMMappingNodes = jsonNode.get("errormapping");
+
+			for (int i = 0; i < errorMMappingNodes.size(); i++) {
+				JsonNode node = errorMMappingNodes.get(i);
+				errorStreamMapping.put(node.get("responsecode").asText(), node.get("stream").asText());
+
+			}
+			try {
+
+				// Get the Stream to retry
+				Stream retryStream = getStream(streamOCIDToRetry);
+
+				StreamClient retryStreamClient = StreamClient.builder().stream(retryStream).build(provider);
+
+				// Get the cursor
+
+				String cursor = getStreamCursor(retryStreamClient, readPartition, streamOCIDToRetry, readAfterOffset);
+
+				// Read messages
+
+				processStatus = readMessagesFromStream(cursor, retryStreamClient, streamOCIDToRetry, errorStreamMapping,
+						readAfterOffset, noOfMessagesToProcess);
+			} catch (BmcException e) {
+				LOGGER.severe(e.getLocalizedMessage());
+				httpGatewayContext.setStatusCode(e.getStatusCode());
+				return e.getLocalizedMessage();
+			}
+
+		} catch (JsonProcessingException jsonex) {
+			LOGGER.severe(jsonex.getLocalizedMessage());
+			httpGatewayContext.setStatusCode(500);
+			return "Error occured in processing the payload ";
 		}
 
-		// Stream to retry
-
-		String streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
-		// Stream Offset to start the reading
-
-		long readOffset = jsonNode.path("readOffset").asLong();
-		// Stream partition to read
-		String readPartition = jsonNode.path("readPartition").asText();
-
-		// Get the error mapping nodes to get the error code and error stream ocid
-		// mappping to use
-
-		JsonNode errorMMappingNodes = jsonNode.get("errormapping");
-
-		for (int i = 0; i < errorMMappingNodes.size(); i++) {
-			JsonNode node = errorMMappingNodes.get(i);
-			errorStreamMapping.put(node.get("responsecode").asText(), node.get("stream").asText());
-
-		}
-		Stream retryStream = null;
-		try {
-			// Get the Stream to retry
-			retryStream = getStream(streamOCIDToRetry);
-		} catch (BmcException ex) {
-
-			LOGGER.severe("Error occured in getting the RetryStream" + ex.getLocalizedMessage());
-			return "Error occured in getting Retry Stream from streamOCIDToRetry " + streamOCIDToRetry;
-
-		}
-
-		StreamClient retryStreamClient = StreamClient.builder().stream(retryStream).build(provider);
-
-		// Get the cursor
-
-		String cursor = getStreamCursor(retryStreamClient, readPartition, streamOCIDToRetry, readOffset);
-
-		// Read messages
-
-		return readMessagesFromStream(cursor, retryStreamClient, streamOCIDToRetry, errorStreamMapping, readOffset);
-
+		return processStatus;
 	}
 
 	/**
@@ -139,23 +148,23 @@ public class RetryFunction {
 	 * @param streamClient
 	 * @param readPartition
 	 * @param streamOCIDToRetry
-	 * @param readOffset
+	 * @param readAfterOffset
 	 * @return String
 	 * 
 	 *         This method creates a Stream message cursor using an
 	 *         AFTER_OFFSET/TRIM_HORIZON cursor type
 	 */
 	private String getStreamCursor(StreamClient streamClient, String readPartition, String streamOCIDToRetry,
-			long readOffset) {
+			long readAfterOffset) {
 		CreateCursorDetails cursorDetails = null;
 
-		if (readOffset == -1) {
+		if (readAfterOffset == -1) {
 			cursorDetails = CreateCursorDetails.builder().partition(readPartition).type(Type.TrimHorizon).build();
 
 		} else {
 
 			cursorDetails = CreateCursorDetails.builder().partition(readPartition).type(Type.AfterOffset)
-					.offset(readOffset).build();
+					.offset(readAfterOffset).build();
 		}
 
 		CreateCursorRequest createCursorRequest = CreateCursorRequest.builder().streamId(streamOCIDToRetry)
@@ -176,12 +185,12 @@ public class RetryFunction {
 	 *         This method is used to read the messages from stream
 	 */
 	private String readMessagesFromStream(String cursor, StreamClient streamClient, String streamOCIDToRetry,
-			Map<String, String> errorStreamMapping, long readOffset) {
+			Map<String, String> errorStreamMapping, int readAfterOffset, int noOfMessagesToProcess) {
 
-		long latestOffset = 0;
+		long lastReadOffset = 0;
 
 		GetMessagesRequest getRequest = GetMessagesRequest.builder().streamId(streamOCIDToRetry).cursor(cursor)
-				.limit(NO_OF_MESSAGES_TO_PROCESS).build();
+				.limit(noOfMessagesToProcess).build();
 
 		GetMessagesResponse getResponse = streamClient.getMessages(getRequest);
 		List<Message> responseItems = getResponse.getItems();
@@ -189,7 +198,7 @@ public class RetryFunction {
 
 		if (responseItems.isEmpty()) {
 
-			return "{	\"endOfStreamReached\": true,\"latestOffset\": " + readOffset + " ,\"processedmessages\":0 }";
+			return "{\"endOfStream\": true}";
 		}
 
 		// process the messages
@@ -214,7 +223,7 @@ public class RetryFunction {
 
 				successMessages = successMessages + 1;
 
-				LOGGER.info("Processed message at offset" + latestOffset);
+				LOGGER.info("Processed message at offset" + lastReadOffset);
 			} catch (Exception ex) {
 
 				LOGGER.severe("Retry Failed due to Exception in processing message " + ex.getLocalizedMessage());
@@ -224,12 +233,12 @@ public class RetryFunction {
 				failedMessages = failedMessages + 1;
 
 			}
-			latestOffset = message.getOffset();
+			lastReadOffset = message.getOffset();
 
 		}
 
-		return "{	\"endOfStream\": false,\"latestOffset\": " + latestOffset + " ,\"processedmessages\":"
-				+ successMessages + " ,\"failedMessages\":" + failedMessages + "}";
+		return "{\"lastReadOffset\":" + lastReadOffset + " ,\"processedmessages\":" + successMessages
+				+ ",\"failedMessages\":" + failedMessages + "}";
 
 	}
 
@@ -252,7 +261,6 @@ public class RetryFunction {
 		ObjectMapper objectMapper = new ObjectMapper();
 
 		JsonNode jsonNode = objectMapper.readTree(streamMessage);
-		System.out.print("jsonNode" + jsonNode);
 
 		// parse the stream message
 		String targetRestApi = jsonNode.get("targetRestApi").asText();
@@ -344,8 +352,8 @@ public class RetryFunction {
 		httpHeaders.forEach((k, v) -> builder.header(k, v));
 		// add authorization token to the request
 		builder.header(authorizationHeaderName, authToken);
-		HttpRequest request = builder.build();
-		return request;
+		return builder.build();
+
 	}
 
 	/**
@@ -369,10 +377,9 @@ public class RetryFunction {
 		// get the bundle content details
 		Base64SecretBundleContentDetails base64SecretBundleContentDetails = (Base64SecretBundleContentDetails) getSecretBundleResponse
 				.getSecretBundle().getSecretBundleContent();
+		secretsClient.close();
 
-		String secret = base64SecretBundleContentDetails.getContent();
-
-		return secret;
+		return base64SecretBundleContentDetails.getContent();
 
 	}
 

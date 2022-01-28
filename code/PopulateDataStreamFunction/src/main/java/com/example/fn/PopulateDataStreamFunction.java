@@ -18,6 +18,7 @@ import com.fnproject.fn.api.Headers;
 import com.fnproject.fn.api.QueryParameters;
 import com.fnproject.fn.api.httpgateway.HTTPGatewayContext;
 import com.oracle.bmc.auth.ResourcePrincipalAuthenticationDetailsProvider;
+import com.oracle.bmc.model.BmcException;
 import com.oracle.bmc.streaming.StreamAdminClient;
 import com.oracle.bmc.streaming.StreamClient;
 import com.oracle.bmc.streaming.model.PutMessagesDetails;
@@ -55,8 +56,7 @@ public class PopulateDataStreamFunction {
 	 *                                 This is the entry point of the function
 	 *                                 execution.
 	 */
-	public String handleRequest(HTTPGatewayContext httpGatewayContext, String requestBody)
-			throws JsonMappingException, JsonProcessingException {
+	public String handleRequest(HTTPGatewayContext httpGatewayContext, String requestBody) {
 
 		String streamKey, streamMessage, vaultSecretName = "";
 
@@ -64,42 +64,56 @@ public class PopulateDataStreamFunction {
 		// Read the request header to get the authorization header value.
 		// This will be stored in a vault
 		Headers headers = httpGatewayContext.getHeaders();
-		String authorizationHeader = headers.get("Authorization").get();
+		Optional<String> authorizationHeaderOpt = headers.get("Authorization");
 		// This is the OCID of the stream to which data is populated.
 
 		Optional<String> streamOCID = queryparams.get("streamOCID");
-		String streamOCIDValue = "";
-		if (streamOCID.isPresent()) {
-			streamOCIDValue = streamOCID.get();
-		} else {
-
-			return "Stream OCID not present";
-
-		}
 
 		ObjectMapper objectMapper = new ObjectMapper();
-		JsonNode jsonNode = objectMapper.readTree(requestBody);
+		try {
+			JsonNode jsonNode = objectMapper.readTree(requestBody);
 
-		// Get the message key and the actual content to be stored in the stream.
-		// streamKey will be used as the stream message's key
+			// Get the message key and the actual content to be stored in the stream.
+			// streamKey will be used as the stream message's key
 
-		streamKey = jsonNode.path("streamKey").asText();
+			streamKey = jsonNode.path("streamKey").asText();
 
-		streamMessage = jsonNode.path("streamMessage").toString();
-		// To get the vaultSecretName from streamMessage
-		JsonNode streamMessageNode = objectMapper.readTree(streamMessage);
+			streamMessage = jsonNode.path("streamMessage").toString();
+			// To get the vaultSecretName from streamMessage
+			JsonNode streamMessageNode = objectMapper.readTree(streamMessage);
+			if (authorizationHeaderOpt.isPresent()) {
 
-		vaultSecretName = streamMessageNode.get("vaultSecretName").asText();
+				String authorizationHeader = authorizationHeaderOpt.get();
+				vaultSecretName = streamMessageNode.get("vaultSecretName").asText();
 
-		// If secret with the name vaultSecretName is not already present,
-		// create a secret
-		if (checkSecretInVault(vaultSecretName)) {
-			createSecretInVault(authorizationHeader, vaultSecretName);
+				// If secret with the name vaultSecretName is not already present,
+				// create a secret
+				if (checkSecretInVault(vaultSecretName)) {
+					createSecretInVault(authorizationHeader, vaultSecretName);
+				}
+
+			}
+
+			// store message in Stream
+			if (streamOCID.isPresent()) {
+
+				storeMessageinStream(streamMessage, streamOCID.get(), streamKey);
+			} else {
+				httpGatewayContext.setStatusCode(500);
+				return "Stream OCID not present in the query params";
+
+			}
+
+		} catch (BmcException e) {
+			LOGGER.severe(e.getLocalizedMessage());
+			httpGatewayContext.setStatusCode(e.getStatusCode());
+			return e.getLocalizedMessage();
+
+		} catch (JsonProcessingException jsonex) {
+			LOGGER.severe(jsonex.getLocalizedMessage());
+			httpGatewayContext.setStatusCode(500);
+			return "Error occured in processing the payload ";
 		}
-
-		// store message in Stream
-
-		storeMessageinStream(streamMessage, streamOCIDValue, streamKey);
 
 		return "success";
 
@@ -109,7 +123,8 @@ public class PopulateDataStreamFunction {
 	 * @param vaultSecretName
 	 * @return boolean
 	 * 
-	 *         This method is used to get check if secretname is present already
+	 *         This method is used to get check if secretname is present already in
+	 *         vault
 	 */
 	private boolean checkSecretInVault(String vaultSecretName) {
 
@@ -120,6 +135,7 @@ public class PopulateDataStreamFunction {
 
 		ListSecretsResponse listSecretsResponse = vaultClient.listSecrets(listSecretsRequest);
 		List<SecretSummary> items = listSecretsResponse.getItems();
+		vaultClient.close();
 		return items.isEmpty();
 
 	}
@@ -152,6 +168,7 @@ public class PopulateDataStreamFunction {
 		CreateSecretRequest createSecretRequest = CreateSecretRequest.builder().createSecretDetails(createSecretDetails)
 				.build();
 		vaultClient.createSecret(createSecretRequest);
+		vaultClient.close();
 
 	}
 

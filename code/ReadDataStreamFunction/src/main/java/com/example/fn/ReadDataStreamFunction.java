@@ -55,10 +55,6 @@ public class ReadDataStreamFunction {
 			.get("internalserver_error_stream_ocid");
 	private static final String DEFAULT_ERROR_STREAM_OCID = System.getenv().get("default_error_stream_ocid");
 
-	public ReadDataStreamFunction() {
-
-	}
-
 	/**
 	 * @param incomingMessage
 	 * 
@@ -69,33 +65,33 @@ public class ReadDataStreamFunction {
 		ObjectMapper objectMapper = new ObjectMapper();
 		// Read the stream messages
 
-		JsonNode jsonTree = null;
 		try {
-			jsonTree = objectMapper.readTree(incomingMessage);
-		} catch (JsonProcessingException e) {
-			LOGGER.severe("Message processing failed with JSONProcessing exception");
-		}
+			JsonNode jsonTree = objectMapper.readTree(incomingMessage);
 
-		for (int i = 0; i < jsonTree.size(); i++) {
-			JsonNode jsonNode = jsonTree.get(i);
-			// Get the stream key and value
+			for (int i = 0; i < jsonTree.size(); i++) {
+				JsonNode jsonNode = jsonTree.get(i);
+				// Get the stream key and value
 
-			String streamKey = jsonNode.get("key").asText();
-			String streamMessage = jsonNode.get("value").asText();
-			// Decode the stream message
+				String streamKey = jsonNode.get("key").asText();
+				String streamMessage = jsonNode.get("value").asText();
+				// Decode the stream message
 
-			String decodedMessageValue = new String(Base64.getDecoder().decode(streamMessage.getBytes()));
+				String decodedMessageValue = new String(Base64.getDecoder().decode(streamMessage.getBytes()));
 
-			try {
+				try {
 
-				processMessage(decodedMessageValue, streamKey);
+					processMessage(decodedMessageValue, streamKey);
 
-			} catch (Exception ex) {
+				} catch (Exception ex) {
 
-				LOGGER.severe("Message failed with exception " + ex.getLocalizedMessage());
+					LOGGER.severe("Message failed with exception " + ex.getLocalizedMessage());
 
-				populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID);
+					populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID);
+				}
+
 			}
+		} catch (JsonProcessingException e) {
+			LOGGER.severe("Message processing failed with JSONProcessing exception" + e.getLocalizedMessage());
 
 		}
 
@@ -161,6 +157,7 @@ public class ReadDataStreamFunction {
 			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(targetRestApi));
 
 			request = constructHttpRequest(builder, httpHeaders, vaultSecretName);
+			break;
 		}
 		default:
 
@@ -223,8 +220,8 @@ public class ReadDataStreamFunction {
 		httpHeaders.forEach((k, v) -> builder.header(k, v));
 		// add authorization token to the request
 		builder.header(authorizationHeaderName, authToken);
-		HttpRequest request = builder.build();
-		return request;
+		return builder.build();
+
 	}
 
 	/**
@@ -248,10 +245,9 @@ public class ReadDataStreamFunction {
 		// get the bundle content details
 		Base64SecretBundleContentDetails base64SecretBundleContentDetails = (Base64SecretBundleContentDetails) getSecretBundleResponse
 				.getSecretBundle().getSecretBundleContent();
+		secretsClient.close();
 
-		String secret = base64SecretBundleContentDetails.getContent();
-
-		return secret;
+		return base64SecretBundleContentDetails.getContent();
 
 	}
 
