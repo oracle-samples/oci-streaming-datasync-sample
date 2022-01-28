@@ -75,7 +75,7 @@ An object storage bucket, _stream-error-bucket_ stores errored messages.
 There are 3 Service Connectors used.
 
 •	Service Connector, _DataSyncServiceConector_ to connect _DataSyncStream_ to Functions, where the target of the Service Connector is set as a _ReadDataStreamFunction_.
-•	Service Connector from error streams to Notifications, _UnrecoverableErrorToNotificationsConnector_. It connects to ErrorTopic subscription.
+•	Service Connector from error streams to Notifications, _UnrecoverableErrorToNotificationsConnector_. It connects to _ErrorTopic_ subscription.
 •	Service Connector from error streams to Object Storage bucket, _UnrecoverableErrorToStorageConnector_ so that a support personnel is notified of the error and can later inspect the failed message in the Object Storage bucket.
 
 
