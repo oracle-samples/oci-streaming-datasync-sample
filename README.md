@@ -150,36 +150,42 @@ https://[host-name]/stream/retry
 
 ```
 {
- "streamOCIDToRetry":"ocid1.stream.oc1…..",
- 		"readOffset": 393,
- 	"readPartition": "0",
-  "errormapping": 
-    [
-            {
-                "responsecode": "404",
-                "stream": "ocid1.stream.oc1.iad.a…."
-            },
-            {
-                "responsecode": "503",
-                "stream": "ocid1.stream.oc1.iad.a…"
-            }      
-            ,
-            {
-                "responsecode": "unmapped",
-                "stream": "ocid1.stream.oc1.iad…."
-            } 
-        ]
-   
-  
+	"streamOCIDToRetry": "ocid1.stream.o...rrr",
+	"noOfMessagesToProcess": 5,
+	"readOffset": -1,
+	"readPartition": "0",
+	"errormapping": [{
+			"responsecode": "404",
+			"stream": "ocid1.stream.oc1.iad...r"
+		},
+		{
+			"responsecode": "503",
+			"stream": "ocid1.stream.oc1.iad.am.."
+		}, {
+			"responsecode": "unexpectedError",
+			"stream": "ocid1.stream.oc1.iad.a...q"
+		},
+		{
+			"responsecode": "unmapped",
+			"stream": "ocid1.stream.oc1.iad.am....q"
+		}
+	]
+
+
 }
 ```
 
 
 In the retry payload, specify the stream OCID to retry using  _streamOCIDToRetry_ and the offset from where the retry should happen. 
+_noOfMessagesToProcess_ is the no of Stream messages to process in a single Function call.
+
+_readoffset_ is the offset location from where the messages are to be read. Set this to -1 to start reading from the oldest message in the Stream. 
 
 The payload also contains an _errormapping_ section to specify the streams to which errored messages should be directed to. _streamOCIDToRetry_ option in the retry payload gives flexibility of retrying messages in any stream.
 
 _errormapping_ option in the payload gives the flexibility of changing error stream mapping based on the stream which is retried and the expected error scenario.
+
+This API's response body will have information on the last offset which was successfully processed, no. of successfully  processed messages and no. of failed messages. It also informs whether end of Stream has reached, so that further call for retrial can be stopped if there is no more message to process.
 
 
 
