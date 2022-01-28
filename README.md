@@ -258,32 +258,38 @@ https://[host-name]/stream/retry
 Sample payload is given below.
 
 Replace the _streamOCIDToRetry_ with the OCID of the error stream to be retried.
-_readoffset_ is the offset location from where the messages are to be read. _RetryFunction_ will read maximum of 10 offsets at a time and returns the last successfully read offset. So if this API needs multiple invocation, store the return value of the API and make subsequent call by passing the last offset as the _readoffset_ value in the payload.
+
+_noOfMessagesToProcess_ is the no of Stream messages to process in a single Function call.
+
+_readoffset_ is the offset location from where the messages are to be read. Set this to -1 to start reading from the oldest message in the Stream. 
+
+ _RetryFunction_ will process the messages and return the last successfully read offset. So if this API needs multiple invocation, read the response body of the API and make subsequent call by passing the last offset as the _readoffset_ value in the payload.
 
 Also replace, _stream_ value in the _errormapping_ section with the error streams in your OCI environment. 
 ```
 {
- "streamOCIDToRetry":"ocid1.stream.oc1.iad.......",
- 		"readOffset": 382,
- 	"readPartition": "1",
-  "errormapping": 
-    [
-            {
-                "responsecode": "404",
-                "stream": "ocid1.stream.oc1.iad.a..."
-            },
-            {
-                "responsecode": "503",
-                "stream": "ocid1.stream.oc1.iad.a...."
-            }      
-            ,
-            {
-                "responsecode": "unmapped",
-                "stream": "ocid1.stream.oc1.iad.am...."
-            } 
-        ]
-   
-  
+	"streamOCIDToRetry": "ocid1.stream.o...rrr",
+	"noOfMessagesToProcess": 5,
+	"readOffset": -1,
+	"readPartition": "0",
+	"errormapping": [{
+			"responsecode": "404",
+			"stream": "ocid1.stream.oc1.iad...r"
+		},
+		{
+			"responsecode": "503",
+			"stream": "ocid1.stream.oc1.iad.am.."
+		}, {
+			"responsecode": "unexpectedError",
+			"stream": "ocid1.stream.oc1.iad.a...q"
+		},
+		{
+			"responsecode": "unmapped",
+			"stream": "ocid1.stream.oc1.iad.am....q"
+		}
+	]
+
+
 }
 ```
 ### Enhancing the sample
@@ -297,7 +303,7 @@ While enhancing the sample do consider the following.
 
 •	You will need a process to delete the Vault secrets once they are no longer needed. One option is to write a Function, that can do the clean-up task periodically.
 
-•	_RetryFunction_ processes 10 messages and returns last successfully processed offset. Do change this to a smaller number if processing of each message takes time and there is a possibility of Function to time out.
+•	_RetryFunction_ payload has the node _noOfMessagesToProcess_ to set the no of messages to process in a single call. Do change this to a smaller number if processing of each message takes time and there is a possibility of Function to time out.
 
 •	Consuming messages from a stream requires you to: create a cursor, then use the cursor to read messages. A cursor is a pointer to a location in a stream. One of the option is to use a  specific offset to start the reading of message. This is called an AT_OFFSET cursor. 
 RetryFunction in the sample uses the AT_OFFSET cursor for consuming message. It accepts _readoffset_ as the starting offset to read message. It returns the last successfully read offset. To process large number of messages together, store returned offset value in a location and pass it as  value of _readoffset_ in json payload and  invoke _RetryFunction_ sequentially.
