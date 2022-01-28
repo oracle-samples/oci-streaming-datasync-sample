@@ -152,7 +152,7 @@ https://[host-name]/stream/retry
 {
 	"streamOCIDToRetry": "ocid1.stream.o...rrr",
 	"noOfMessagesToProcess": 5,
-	"readOffset": -1,
+	"readAfterOffset": -1,
 	"readPartition": "0",
 	"errormapping": [{
 			"responsecode": "404",
@@ -179,15 +179,19 @@ https://[host-name]/stream/retry
 In the retry payload, specify the stream OCID to retry using  _streamOCIDToRetry_ and the offset from where the retry should happen. 
 _noOfMessagesToProcess_ is the no of Stream messages to process in a single Function call.
 
-_readoffset_ is the offset location from where the messages are to be read. Set this to -1 to start reading from the oldest message in the Stream. 
+_readAfterOffset_ is the offset location from where the messages are to be read. Set this to -1 to start reading from the oldest message in the Stream. 
 
 The payload also contains an _errormapping_ section to specify the streams to which errored messages should be directed to. _streamOCIDToRetry_ option in the retry payload gives flexibility of retrying messages in any stream.
 
 _errormapping_ option in the payload gives the flexibility of changing error stream mapping based on the stream which is retried and the expected error scenario.
 
-This API's response body will have information on the last offset which was successfully processed, no. of successfully  processed messages and no. of failed messages. It also informs whether end of Stream has reached, so that further call for retrial can be stopped if there is no more message to process.
+This API's response body will have information on the last offset which was successfully processed, no. of successfully  processed messages and no. of failed messages. 
 
+`{"lastReadOffset":405 ,"processedmessages":0,"failedMessages":1}`
 
+It also informs whether end of Stream has reached, so that further call for retrial can be stopped if there is no more message to process.
+
+`{"endOfStream": true}`
 
 ## Installation
 
@@ -267,16 +271,16 @@ Replace the _streamOCIDToRetry_ with the OCID of the error stream to be retried.
 
 _noOfMessagesToProcess_ is the no of Stream messages to process in a single Function call.
 
-_readoffset_ is the offset location from where the messages are to be read. Set this to -1 to start reading from the oldest message in the Stream. 
+_readAfterOffset_ is the offset location from where the messages are to be read. Set this to -1 to start reading from the oldest message in the Stream. 
 
- _RetryFunction_ will process the messages and return the last successfully read offset. So if this API needs multiple invocation, read the response body of the API and make subsequent call by passing the last offset as the _readoffset_ value in the payload.
+ _RetryFunction_ will process the messages and return the last successfully read offset. So if this API needs multiple invocation, read the response body of the API and make subsequent call by passing the last offset as the _readAfterOffset_ value in the payload.
 
 Also replace, _stream_ value in the _errormapping_ section with the error streams in your OCI environment. 
 ```
 {
 	"streamOCIDToRetry": "ocid1.stream.o...rrr",
 	"noOfMessagesToProcess": 5,
-	"readOffset": -1,
+	"readAfterOffset": -1,
 	"readPartition": "0",
 	"errormapping": [{
 			"responsecode": "404",
@@ -312,7 +316,7 @@ While enhancing the sample do consider the following.
 •	_RetryFunction_ payload has the node _noOfMessagesToProcess_ to set the no of messages to process in a single call. Do change this to a smaller number if processing of each message takes time and there is a possibility of Function to time out.
 
 •	Consuming messages from a stream requires you to: create a cursor, then use the cursor to read messages. A cursor is a pointer to a location in a stream. One of the option is to use a  specific offset to start the reading of message. This is called an AT_OFFSET cursor. 
-RetryFunction in the sample uses the AT_OFFSET cursor for consuming message. It accepts _readoffset_ as the starting offset to read message. It returns the last successfully read offset. To process large number of messages together, store returned offset value in a location and pass it as  value of _readoffset_ in json payload and  invoke _RetryFunction_ sequentially.
+RetryFunction in the sample uses the AT_OFFSET cursor for consuming message. It accepts _readAfterOffset_ as the starting offset to read message. It returns the last successfully read offset. To process large number of messages together, store returned offset value in a location and pass it as  value of _readAfterOffset_ in json payload and  invoke _RetryFunction_ sequentially.
 
 •	The sample function handles PUT, POST and DELETE operations. To add or remove operations, change the _ReadDataStreamFunction_ and _RetryFunction_ code. Also change the _targetRestApiOperation_ section of the payload.
 
