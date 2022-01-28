@@ -9,7 +9,6 @@ package com.example.fn;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -61,6 +60,7 @@ public class RetryFunction {
 
 	/**
 	 * @param requestBody
+	 * @param httpGatewayContext
 	 * @return String
 	 * 
 	 *         This is the entry point of the Function call
@@ -131,7 +131,7 @@ public class RetryFunction {
 
 	/**
 	 * @param streamOCID
-	 * @return
+	 * @return Stream
 	 * 
 	 *         This method obtains the Stream object from the stream OCID.
 	 */
@@ -180,6 +180,8 @@ public class RetryFunction {
 	 * @param streamClient
 	 * @param streamOCIDToRetry
 	 * @param errorStreamMapping
+	 * @param readAfterOffset
+	 * @param noOfMessagesToProcess
 	 * @return String
 	 * 
 	 *         This method is used to read the messages from stream
@@ -245,10 +247,11 @@ public class RetryFunction {
 	/**
 	 * @param streamMessage
 	 * @param streamKey
-	 * @param errorStreamMapping This method parses the incoming message and
-	 *                           processes it.
-	 * @throws InterruptedException
-	 * @throws IOException
+	 * @param errorStreamMapping
+	 * @throws Exception
+	 * 
+	 *                   This method parses the incoming message and processes it.
+	 * 
 	 */
 	private void processMessage(String streamMessage, String streamKey, Map<String, String> errorStreamMapping)
 			throws Exception {
