@@ -320,6 +320,8 @@ RetryFunction in the sample uses the AT_OFFSET cursor for consuming message. It 
 
 •	It is assumed that the authentication token to invoke the target application’s REST api is passed in the “Authorization” Header. There is a possibility that authorization token stored in Vault expires while retrying the message. This scenario is not considered in the sample. 
 
+•	It is also possible to move the common methods in Functions to helper classes and reusing them.
+
 
 ## Troubleshooting
 
