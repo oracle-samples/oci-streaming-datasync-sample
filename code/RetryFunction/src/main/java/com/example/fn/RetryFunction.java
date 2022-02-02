@@ -43,13 +43,16 @@ import com.oracle.bmc.streaming.model.PutMessagesDetails;
 import com.oracle.bmc.streaming.model.PutMessagesDetailsEntry;
 import com.oracle.bmc.streaming.model.PutMessagesResultEntry;
 import com.oracle.bmc.streaming.model.Stream;
+import com.oracle.bmc.streaming.model.Stream.LifecycleState;
 import com.oracle.bmc.streaming.requests.CreateCursorRequest;
 import com.oracle.bmc.streaming.requests.GetMessagesRequest;
 import com.oracle.bmc.streaming.requests.GetStreamRequest;
+import com.oracle.bmc.streaming.requests.ListStreamsRequest;
 import com.oracle.bmc.streaming.requests.PutMessagesRequest;
 import com.oracle.bmc.streaming.responses.CreateCursorResponse;
 import com.oracle.bmc.streaming.responses.GetMessagesResponse;
 import com.oracle.bmc.streaming.responses.GetStreamResponse;
+import com.oracle.bmc.streaming.responses.ListStreamsResponse;
 import com.oracle.bmc.streaming.responses.PutMessagesResponse;
 
 public class RetryFunction {
@@ -57,6 +60,7 @@ public class RetryFunction {
 	private final ResourcePrincipalAuthenticationDetailsProvider provider = ResourcePrincipalAuthenticationDetailsProvider
 			.builder().build();
 	private static final String VAULT_OCID = System.getenv().get("vault_ocid");
+	private static final String STREAM_COMPARTMENT_OCID = System.getenv().get("stream_compartment_ocid");
 
 	/**
 	 * @param requestBody
@@ -71,6 +75,7 @@ public class RetryFunction {
 
 		Map<String, String> errorStreamMapping = new HashMap<>();
 		ObjectMapper mapper = new ObjectMapper();
+		StreamAdminClient streamAdminClient = StreamAdminClient.builder().build(provider);
 		String processStatus = "";
 
 		try {
@@ -79,7 +84,15 @@ public class RetryFunction {
 			// Stream to retry
 
 			String streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
-			// Stream Offset to start the reading
+			// check if the stream exists
+			if (!streamExist(streamOCIDToRetry, streamAdminClient)) {
+				LOGGER.severe(streamOCIDToRetry
+						+ " doesn't exist. Please correct the errormapping section with correct stream OCID");
+				httpGatewayContext.setStatusCode(500);
+				return streamOCIDToRetry
+						+ " doesn't exist. Please correct the errormapping section with correct stream OCID";
+
+			}
 
 			int readAfterOffset = jsonNode.path("readAfterOffset").asInt();
 			// Stream partition to read
@@ -96,13 +109,24 @@ public class RetryFunction {
 
 			for (int i = 0; i < errorMMappingNodes.size(); i++) {
 				JsonNode node = errorMMappingNodes.get(i);
+				String streamOCID = node.get("stream").asText();
+
+				// check if the error stream OCIDs in the payload are correct
+				if (!streamExist(node.get("stream").asText(), streamAdminClient)) {
+					LOGGER.severe(streamOCID
+							+ " doesn't exist. Please correct the errormapping section with correct stream OCID");
+					httpGatewayContext.setStatusCode(500);
+					return streamOCID
+							+ " doesn't exist. Please correct the errormapping section with correct stream OCID";
+
+				}
 				errorStreamMapping.put(node.get("responsecode").asText(), node.get("stream").asText());
 
 			}
 			try {
 
 				// Get the Stream to retry
-				Stream retryStream = getStream(streamOCIDToRetry);
+				Stream retryStream = getStream(streamOCIDToRetry, streamAdminClient);
 
 				StreamClient retryStreamClient = StreamClient.builder().stream(retryStream).build(provider);
 
@@ -113,7 +137,7 @@ public class RetryFunction {
 				// Read messages
 
 				processStatus = readMessagesFromStream(cursor, retryStreamClient, streamOCIDToRetry, errorStreamMapping,
-						readAfterOffset, noOfMessagesToProcess);
+						readAfterOffset, noOfMessagesToProcess, streamAdminClient);
 			} catch (BmcException e) {
 				LOGGER.severe(e.getLocalizedMessage());
 				httpGatewayContext.setStatusCode(e.getStatusCode());
@@ -131,13 +155,13 @@ public class RetryFunction {
 
 	/**
 	 * @param streamOCID
+	 * @param streamAdminClient
 	 * @return Stream
 	 * 
 	 *         This method obtains the Stream object from the stream OCID.
 	 */
-	private Stream getStream(String streamOCID) {
+	private Stream getStream(String streamOCID, StreamAdminClient streamAdminClient) {
 
-		StreamAdminClient streamAdminClient = StreamAdminClient.builder().build(provider);
 		GetStreamResponse getResponse = streamAdminClient
 				.getStream(GetStreamRequest.builder().streamId(streamOCID).build());
 
@@ -182,25 +206,33 @@ public class RetryFunction {
 	 * @param errorStreamMapping
 	 * @param readAfterOffset
 	 * @param noOfMessagesToProcess
+	 * @param StreamAdminClient
 	 * @return String
 	 * 
 	 *         This method is used to read the messages from stream
 	 */
 	private String readMessagesFromStream(String cursor, StreamClient streamClient, String streamOCIDToRetry,
-			Map<String, String> errorStreamMapping, int readAfterOffset, int noOfMessagesToProcess) {
+			Map<String, String> errorStreamMapping, int readAfterOffset, int noOfMessagesToProcess,
+			StreamAdminClient streamAdminClient) {
 
 		long lastReadOffset = 0;
-
+		String returnMessage = "";
 		GetMessagesRequest getRequest = GetMessagesRequest.builder().streamId(streamOCIDToRetry).cursor(cursor)
 				.limit(noOfMessagesToProcess).build();
 
 		GetMessagesResponse getResponse = streamClient.getMessages(getRequest);
 		List<Message> responseItems = getResponse.getItems();
+
 		// if end of stream is reached, return
 
 		if (responseItems.isEmpty()) {
 
 			return "{\"endOfStream\": true}";
+		}
+
+		if (responseItems.size() <= noOfMessagesToProcess) {
+
+			returnMessage = ",\"endOfStream\": true";
 		}
 
 		// process the messages
@@ -221,7 +253,7 @@ public class RetryFunction {
 					streamKey = "";
 				}
 
-				processMessage(streamMessage, streamKey, errorStreamMapping);
+				processMessage(streamMessage, streamKey, errorStreamMapping, streamAdminClient);
 
 				successMessages = successMessages + 1;
 
@@ -229,8 +261,8 @@ public class RetryFunction {
 			} catch (Exception ex) {
 
 				LOGGER.severe("Retry Failed due to Exception in processing message " + ex.getLocalizedMessage());
-				populateErrorStream(streamMessage, streamKey,
-						errorStreamMapping.get(String.valueOf("unexpectedError")));
+				populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf("unexpectedError")),
+						streamAdminClient);
 				// Return the offset upto which messages were read
 				failedMessages = failedMessages + 1;
 
@@ -240,21 +272,43 @@ public class RetryFunction {
 		}
 
 		return "{\"lastReadOffset\":" + lastReadOffset + " ,\"processedmessages\":" + successMessages
-				+ ",\"failedMessages\":" + failedMessages + "}";
+				+ ",\"failedMessages\":" + failedMessages + returnMessage + "}";
 
+	}
+
+	/**
+	 * @param streamOCID
+	 * @param streamAdminClient
+	 * @return
+	 * 
+	 *         This method checks if a stream exist
+	 */
+	private boolean streamExist(String streamOCID, StreamAdminClient streamAdminClient) {
+
+		ListStreamsRequest listRequest = ListStreamsRequest.builder().compartmentId(STREAM_COMPARTMENT_OCID)
+				.id(streamOCID).lifecycleState(LifecycleState.Active).build();
+
+		ListStreamsResponse listResponse = streamAdminClient.listStreams(listRequest);
+
+		if (listResponse.getItems().isEmpty()) {
+
+			return false;
+		}
+		return true;
 	}
 
 	/**
 	 * @param streamMessage
 	 * @param streamKey
 	 * @param errorStreamMapping
+	 * @param StreamAdminClient
 	 * @throws Exception
 	 * 
 	 *                   This method parses the incoming message and processes it.
 	 * 
 	 */
-	private void processMessage(String streamMessage, String streamKey, Map<String, String> errorStreamMapping)
-			throws Exception {
+	private void processMessage(String streamMessage, String streamKey, Map<String, String> errorStreamMapping,
+			StreamAdminClient streamAdminClient) throws Exception {
 
 		String targetRestApiPayload = null;
 		HttpClient httpClient = HttpClient.newHttpClient();
@@ -326,12 +380,13 @@ public class RetryFunction {
 				// move the message to an error stream if a stream corresponding to response
 				// status is defined
 				populateErrorStream(streamMessage, streamKey,
-						errorStreamMapping.get(String.valueOf(responseStatusCode)));
+						errorStreamMapping.get(String.valueOf(responseStatusCode)), streamAdminClient);
 
 			} else {
 				// if there is no error stream defined for the REST response code, use the
 				// default
-				populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf("unmapped")));
+				populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf("unmapped")),
+						streamAdminClient);
 			}
 		}
 
@@ -390,12 +445,14 @@ public class RetryFunction {
 	 * @param streamMessage
 	 * @param streamKey
 	 * @param errorStreamOCID
+	 * @param StreamAdminClient
 	 * 
-	 *                        This method is used to populate the error stream with
-	 *                        the failed message
+	 *                          This method is used to populate the error stream
+	 *                          with the failed message
 	 *
 	 */
-	private void populateErrorStream(String streamMessage, String streamKey, String errorStreamOCID) {
+	private void populateErrorStream(String streamMessage, String streamKey, String errorStreamOCID,
+			StreamAdminClient streamAdminClient) {
 
 		// Construct the stream message
 
@@ -407,15 +464,16 @@ public class RetryFunction {
 				.putMessagesDetails(messagesDetails).build();
 		// Read the response
 
-		PutMessagesResponse putResponse = StreamClient.builder().stream(getStream(errorStreamOCID)).build(provider)
-				.putMessages(putRequest);
+		PutMessagesResponse putResponse = StreamClient.builder().stream(getStream(errorStreamOCID, streamAdminClient))
+				.build(provider).putMessages(putRequest);
 		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
 			if (entry.getError() != null) {
 
-				LOGGER.severe("Put message error " + entry.getErrorMessage());
+				LOGGER.severe("Put message error " + entry.getErrorMessage() + " in " + errorStreamOCID);
 			} else {
 
-				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition());
+				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition()
+						+ " in ocid " + errorStreamOCID);
 			}
 
 		}

@@ -68,6 +68,11 @@ public class PopulateDataStreamFunction {
 		// This is the OCID of the stream to which data is populated.
 
 		Optional<String> streamOCID = queryparams.get("streamOCID");
+		if (!streamOCID.isPresent()) {
+			httpGatewayContext.setStatusCode(500);
+			return "Stream OCID not present in the query params";
+
+		}
 
 		ObjectMapper objectMapper = new ObjectMapper();
 		try {
@@ -94,15 +99,7 @@ public class PopulateDataStreamFunction {
 
 			}
 
-			// store message in Stream
-			if (streamOCID.isPresent()) {
-
-				storeMessageinStream(streamMessage, streamOCID.get(), streamKey);
-			} else {
-				httpGatewayContext.setStatusCode(500);
-				return "Stream OCID not present in the query params";
-
-			}
+			storeMessageinStream(streamMessage, streamOCID.get(), streamKey);
 
 		} catch (BmcException e) {
 			LOGGER.severe(e.getLocalizedMessage());

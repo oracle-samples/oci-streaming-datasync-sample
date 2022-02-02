@@ -17,6 +17,7 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -25,6 +26,7 @@ import javax.ws.rs.core.Response.Status.Family;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fnproject.fn.api.httpgateway.HTTPGatewayContext;
 import com.oracle.bmc.auth.ResourcePrincipalAuthenticationDetailsProvider;
 import com.oracle.bmc.secrets.SecretsClient;
 import com.oracle.bmc.secrets.model.Base64SecretBundleContentDetails;
@@ -36,9 +38,12 @@ import com.oracle.bmc.streaming.model.PutMessagesDetails;
 import com.oracle.bmc.streaming.model.PutMessagesDetailsEntry;
 import com.oracle.bmc.streaming.model.PutMessagesResultEntry;
 import com.oracle.bmc.streaming.model.Stream;
+import com.oracle.bmc.streaming.model.Stream.LifecycleState;
 import com.oracle.bmc.streaming.requests.GetStreamRequest;
+import com.oracle.bmc.streaming.requests.ListStreamsRequest;
 import com.oracle.bmc.streaming.requests.PutMessagesRequest;
 import com.oracle.bmc.streaming.responses.GetStreamResponse;
+import com.oracle.bmc.streaming.responses.ListStreamsResponse;
 import com.oracle.bmc.streaming.responses.PutMessagesResponse;
 
 public class ReadDataStreamFunction {
@@ -54,15 +59,26 @@ public class ReadDataStreamFunction {
 	private static final String INTERNALSERVER_ERROR_STREAM_OCID = System.getenv()
 			.get("internalserver_error_stream_ocid");
 	private static final String DEFAULT_ERROR_STREAM_OCID = System.getenv().get("default_error_stream_ocid");
+	private static final String STREAM_COMPARTMENT_OCID = System.getenv().get("stream_compartment_ocid");
 
 	/**
 	 * @param incomingMessage
+	 * @param httpGatewayContext
+	 * @return
 	 * 
-	 *                        This is the entry point of the function execution.
+	 * 
+	 *         This is the entry point of the function execution.
 	 */
-	public void handleRequest(String incomingMessage) {
+	public String handleRequest(String incomingMessage, HTTPGatewayContext httpGatewayContext) {
 
 		ObjectMapper objectMapper = new ObjectMapper();
+		StreamAdminClient streamAdminClient = StreamAdminClient.builder().build(provider);
+
+		if (!streamExist(streamAdminClient)) {
+			httpGatewayContext.setStatusCode(500);
+			return "failed";
+
+		}
 		// Read the stream messages
 
 		try {
@@ -80,30 +96,70 @@ public class ReadDataStreamFunction {
 
 				try {
 
-					processMessage(decodedMessageValue, streamKey);
+					processMessage(decodedMessageValue, streamKey, streamAdminClient);
 
 				} catch (Exception ex) {
 
 					LOGGER.severe("Message failed with exception " + ex.getLocalizedMessage());
 
-					populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID);
+					populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID, streamAdminClient);
 				}
 
 			}
 		} catch (JsonProcessingException e) {
+			httpGatewayContext.setStatusCode(500);
 			LOGGER.severe("Message processing failed with JSONProcessing exception" + e.getLocalizedMessage());
+			return "failed";
 
 		}
+
+		return "success";
+
+	}
+
+	/**
+	 * @param streamAdminClient
+	 * @returnboolean
+	 * 
+	 *                This method checks if a stream exist
+	 */
+	private boolean streamExist(StreamAdminClient streamAdminClient) {
+
+		boolean streamsExist = true;
+
+		List<String> streamOCIDList = List.of(UNRECOVERABLE_ERROR_STREAM_OCID, SERVICEUNAVAILABLE_ERROR_STREAM_OCID,
+				INTERNALSERVER_ERROR_STREAM_OCID, DEFAULT_ERROR_STREAM_OCID);
+
+		for (int i = 0; i < streamOCIDList.size(); i++) {
+			streamsExist = true;
+			ListStreamsRequest listRequest = ListStreamsRequest.builder().compartmentId(STREAM_COMPARTMENT_OCID)
+					.id(streamOCIDList.get(i)).lifecycleState(LifecycleState.Active).build();
+
+			ListStreamsResponse listResponse = streamAdminClient.listStreams(listRequest);
+
+			if (listResponse.getItems().isEmpty()) {
+
+				streamsExist = false;
+				LOGGER.severe("streamOCID " + streamOCIDList.get(i) + " in application configurations  doesn't exist");
+			}
+			break;
+		}
+
+		return streamsExist;
 
 	}
 
 	/**
 	 * @param streamMessage
-	 * @param streamKey     This method parses the incoming message and processes it
-	 *                      based on the targetRestApiOperation defined in the
-	 *                      message
+	 * @param streamKey
+	 * @param StreamAdminClient
+	 * 
+	 *                          This method parses the incoming message and
+	 *                          processes it based on the targetRestApiOperation
+	 *                          defined in the message
 	 */
-	private void processMessage(String streamMessage, String streamKey) throws Exception {
+	private void processMessage(String streamMessage, String streamKey, StreamAdminClient streamAdminClient)
+			throws Exception {
 		HttpClient httpClient = HttpClient.newHttpClient();
 
 		String targetRestApiPayload = "";
@@ -197,7 +253,7 @@ public class ReadDataStreamFunction {
 
 			}
 
-			populateErrorStream(streamMessage, streamKey, errorStreamOCID);
+			populateErrorStream(streamMessage, streamKey, errorStreamOCID, streamAdminClient);
 		}
 
 	}
@@ -258,8 +314,7 @@ public class ReadDataStreamFunction {
 	 * 
 	 *         This method obtains the Stream object from the stream OCID.
 	 */
-	private Stream getStream(String streamOCID) {
-		StreamAdminClient streamAdminClient = StreamAdminClient.builder().build(provider);
+	private Stream getStream(String streamOCID, StreamAdminClient streamAdminClient) {
 
 		GetStreamResponse getResponse = streamAdminClient
 				.getStream(GetStreamRequest.builder().streamId(streamOCID).build());
@@ -270,11 +325,13 @@ public class ReadDataStreamFunction {
 	 * @param streamMessage
 	 * @param streamKey
 	 * @param errorStreamOCID
+	 * @param StreamAdminClient
 	 * 
-	 *                        This method is used to populate the error stream with
-	 *                        the failed message
+	 *                          This method is used to populate the error stream
+	 *                          with the failed message
 	 */
-	private void populateErrorStream(String streamMessage, String streamKey, String errorStreamOCID) {
+	private void populateErrorStream(String streamMessage, String streamKey, String errorStreamOCID,
+			StreamAdminClient streamAdminClient) {
 
 		// Construct the stream message
 
@@ -287,15 +344,16 @@ public class ReadDataStreamFunction {
 
 		// Read the response
 
-		PutMessagesResponse putResponse = StreamClient.builder().stream(getStream(errorStreamOCID)).build(provider)
-				.putMessages(putRequest);
+		PutMessagesResponse putResponse = StreamClient.builder().stream(getStream(errorStreamOCID, streamAdminClient))
+				.build(provider).putMessages(putRequest);
 		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
 			if (entry.getError() != null) {
 
-				LOGGER.severe("Put message error " + entry.getErrorMessage());
+				LOGGER.severe("Put message error " + entry.getErrorMessage() + " in " + errorStreamOCID);
 			} else {
 
-				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition());
+				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition()
+						+ " in ocid " + errorStreamOCID);
 			}
 
 		}
