@@ -61,6 +61,7 @@ public class RetryFunction {
 			.builder().build();
 	private static final String VAULT_OCID = System.getenv().get("vault_ocid");
 	private static final String STREAM_COMPARTMENT_OCID = System.getenv().get("stream_compartment_ocid");
+	private static final String DEFAULT_ERROR_STREAM_OCID = System.getenv().get("default_error_stream_ocid");
 
 	/**
 	 * @param requestBody
@@ -86,7 +87,7 @@ public class RetryFunction {
 			String streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
 			// check if the stream exists
 			if (!streamExist(streamOCIDToRetry, streamAdminClient)) {
-				LOGGER.severe(streamOCIDToRetry
+				LOGGER.severe("Processing Failed. " + streamOCIDToRetry
 						+ " doesn't exist. Please correct the errormapping section with correct stream OCID");
 				httpGatewayContext.setStatusCode(500);
 				return streamOCIDToRetry
@@ -385,7 +386,7 @@ public class RetryFunction {
 			} else {
 				// if there is no error stream defined for the REST response code, use the
 				// default
-				populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf("unmapped")),
+				populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(DEFAULT_ERROR_STREAM_OCID),
 						streamAdminClient);
 			}
 		}

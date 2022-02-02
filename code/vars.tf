@@ -3,9 +3,15 @@
 
 
 
-variable "compartment_ocid" {
+variable "stream_compartment_ocid" {
 
-  description = "The compartment ocid where you are creating the services."
+  description = "The compartment ocid where you are creating the streams."
+  type        = string
+}
+
+variable "vault_compartment_ocid" {
+
+  description = "The compartment ocid where you are creating the vault."
   type        = string
 }
 

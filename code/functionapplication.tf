@@ -10,8 +10,8 @@ resource oci_functions_application export_DataSyncApplication {
     "_404_error_stream_ocid"    = oci_streaming_stream.export_UnrecoverableErrorStream.id
     "_503_error_stream_ocid"    = oci_streaming_stream.export_ServerUnavailableStream.id
     "default_error_stream_ocid" = oci_streaming_stream.export_ServerUnavailableStream.id
-    "vault_compartment_ocid"    = var.compartment_ocid
-    "stream_compartment_ocid"   = var.compartment_ocid
+    "vault_compartment_ocid"    = var.stream_compartment_ocid
+    "stream_compartment_ocid"   = var.vault_compartment_ocid
     "vault_key_ocid"            = oci_kms_key_version.export_SyncDataEncryptionKey_key_version_1.id
     "vault_ocid"                = oci_kms_vault.export_DataSync_Vault.id
   }

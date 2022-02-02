@@ -76,6 +76,7 @@ public class ReadDataStreamFunction {
 
 		if (!streamExist(streamAdminClient)) {
 			httpGatewayContext.setStatusCode(500);
+
 			return "failed";
 
 		}
@@ -119,9 +120,9 @@ public class ReadDataStreamFunction {
 
 	/**
 	 * @param streamAdminClient
-	 * @returnboolean
+	 * @return boolean
 	 * 
-	 *                This method checks if a stream exist
+	 *         This method checks if a stream exist
 	 */
 	private boolean streamExist(StreamAdminClient streamAdminClient) {
 
@@ -140,9 +141,11 @@ public class ReadDataStreamFunction {
 			if (listResponse.getItems().isEmpty()) {
 
 				streamsExist = false;
-				LOGGER.severe("streamOCID " + streamOCIDList.get(i) + " in application configurations  doesn't exist");
+				LOGGER.severe("Processing Failed as streamOCID " + streamOCIDList.get(i)
+						+ " in application configurations  doesn't exist");
+				break;
 			}
-			break;
+
 		}
 
 		return streamsExist;
