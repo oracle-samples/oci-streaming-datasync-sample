@@ -164,10 +164,6 @@ https://[host-name]/stream/retry
 		}, {
 			"responsecode": "unexpectedError",
 			"stream": "ocid1.stream.oc1.iad.a...q"
-		},
-		{
-			"responsecode": "unmapped",
-			"stream": "ocid1.stream.oc1.iad.am....q"
 		}
 	]
 
@@ -187,11 +183,11 @@ _errormapping_ option in the payload gives the flexibility of changing error str
 
 This API's response body will have information on the last offset which was successfully processed, no. of successfully  processed messages and no. of failed messages. 
 
-`{"lastReadOffset":405 ,"processedmessages":0,"failedMessages":1}`
+`{"lastReadOffset":405 ,"processedmessages":0,"failedMessages":1,"endOfStream": true}`
 
 It also informs whether end of Stream has reached, so that further call for retrial can be stopped if there is no more message to process.
 
-`{"endOfStream": true}`
+
 
 ## Installation
 
@@ -292,11 +288,8 @@ Also replace, _stream_ value in the _errormapping_ section with the error stream
 		}, {
 			"responsecode": "unexpectedError",
 			"stream": "ocid1.stream.oc1.iad.a...q"
-		},
-		{
-			"responsecode": "unmapped",
-			"stream": "ocid1.stream.oc1.iad.am....q"
 		}
+		
 	]
 
 
