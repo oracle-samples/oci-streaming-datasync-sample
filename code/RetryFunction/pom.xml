@@ -8,7 +8,7 @@
         <fdk.version>1.0.139</fdk.version>
     </properties>
     <groupId>com.example.fn</groupId>
-    <artifactId>retry</artifactId>
+    <artifactId>retryfunction</artifactId>
     <version>1.0.0</version>
 
     <dependencies>

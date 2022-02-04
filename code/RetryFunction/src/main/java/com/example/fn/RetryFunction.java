@@ -9,6 +9,7 @@ package com.example.fn;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -20,6 +21,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.ws.rs.core.Response.Status.Family;
@@ -62,6 +64,7 @@ public class RetryFunction {
 	private static final String VAULT_OCID = System.getenv().get("vault_ocid");
 	private static final String STREAM_COMPARTMENT_OCID = System.getenv().get("stream_compartment_ocid");
 	private static final String DEFAULT_ERROR_STREAM_OCID = System.getenv().get("default_error_stream_ocid");
+	private static final String[] OPERATIONS = new String[] { "PUT", "POST", "DELETE" };
 
 	/**
 	 * @param requestBody
@@ -77,68 +80,97 @@ public class RetryFunction {
 		Map<String, String> errorStreamMapping = new HashMap<>();
 		ObjectMapper mapper = new ObjectMapper();
 		StreamAdminClient streamAdminClient = StreamAdminClient.builder().build(provider);
-		String processStatus = "";
+
+		String readPartition = "";
+		int noOfMessagesToProcess = 0;
+		int readAfterOffset = 0;
+		String streamOCIDToRetry = "";
+		StringBuilder processStatus = new StringBuilder("Message could not be processed.");
+		boolean processingFailed = false;
 
 		try {
 			JsonNode jsonNode = mapper.readTree(requestBody);
 
-			// Stream to retry
+			if (jsonNode.has("streamOCIDToRetry")) {
+				streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
 
-			String streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
-			// check if the stream exists
-			if (!streamExist(streamOCIDToRetry, streamAdminClient)) {
-				LOGGER.severe("Processing Failed. " + streamOCIDToRetry
-						+ " doesn't exist. Please correct the errormapping section with correct stream OCID");
-				httpGatewayContext.setStatusCode(500);
-				return streamOCIDToRetry
-						+ " doesn't exist. Please correct the errormapping section with correct stream OCID";
+				// check if the stream exists
+				if (!streamExist(streamOCIDToRetry, streamAdminClient)) {
+					LOGGER.log(Level.SEVERE,
+							"Processing Failed.  Please correct the streamOCIDToRetry with correct stream OCID. {0}  doesnt exist",
+							streamOCIDToRetry);
 
-			}
-
-			int readAfterOffset = jsonNode.path("readAfterOffset").asInt();
-			// Stream partition to read
-			String readPartition = jsonNode.path("readPartition").asText();
-
-			// no of messages to process
-
-			int noOfMessagesToProcess = jsonNode.path("noOfMessagesToProcess").asInt();
-
-			// Get the error mapping nodes to get the error code and error stream ocid
-			// mappping to use
-
-			JsonNode errorMMappingNodes = jsonNode.get("errormapping");
-
-			for (int i = 0; i < errorMMappingNodes.size(); i++) {
-				JsonNode node = errorMMappingNodes.get(i);
-				String streamOCID = node.get("stream").asText();
-
-				// check if the error stream OCIDs in the payload are correct
-				if (!streamExist(node.get("stream").asText(), streamAdminClient)) {
-					LOGGER.severe(streamOCID
-							+ " doesn't exist. Please correct the errormapping section with correct stream OCID");
 					httpGatewayContext.setStatusCode(500);
-					return streamOCID
-							+ " doesn't exist. Please correct the errormapping section with correct stream OCID";
+					return streamOCIDToRetry
+							+ " doesnt exist. Please correct the streamOCIDToRetry  with correct stream OCID";
 
 				}
-				errorStreamMapping.put(node.get("responsecode").asText(), node.get("stream").asText());
+			} else {
+				processingFailed = true;
+				processStatus.append(" streamOCIDToRetry ");
 
 			}
+
+			if (jsonNode.has("readAfterOffset")) {
+				readAfterOffset = jsonNode.path("readAfterOffset").asInt();
+			} else {
+				processingFailed = true;
+				processStatus.append(" readAfterOffset ");
+			}
+
+			if (jsonNode.has("readPartition")) {
+				readPartition = jsonNode.path("readPartition").asText();
+			} else {
+				processingFailed = true;
+				processStatus.append(" readPartition ");
+			}
+
+			if (jsonNode.has("noOfMessagesToProcess")) {
+				noOfMessagesToProcess = jsonNode.path("noOfMessagesToProcess").asInt();
+			} else {
+				processingFailed = true;
+				processStatus.append(" noOfMessagesToProcess ");
+			}
+
+			if (jsonNode.has("errormapping")) {
+				// Get the error mapping nodes to get the error code and error stream ocid
+				// mappping to use
+
+				JsonNode errorMMappingNodes = jsonNode.get("errormapping");
+
+				for (int i = 0; i < errorMMappingNodes.size(); i++) {
+					JsonNode node = errorMMappingNodes.get(i);
+					String streamOCID = node.get("stream").asText();
+
+					// check if the error stream OCIDs in the payload are correct
+					if (!streamExist(streamOCID, streamAdminClient)) {
+						LOGGER.log(Level.SEVERE,
+								"Processing Failed.  Please correct the errormapping section with correct stream OCID. {0}  doesnt exist",
+								streamOCID);
+
+						httpGatewayContext.setStatusCode(500);
+						return streamOCID
+								+ " doesnt exist. Please correct the errormapping section with correct stream OCID";
+
+					}
+					// store in a map
+					errorStreamMapping.put(node.get("responsecode").asText(), streamOCID);
+
+				}
+			} else {
+				processingFailed = true;
+				processStatus.append(" errormapping ");
+			}
+			if (processingFailed) {
+				LOGGER.severe(processStatus.toString());
+				httpGatewayContext.setStatusCode(500);
+				return processStatus.append(" not found in the payload").toString();
+			}
+
 			try {
+				return processStreamMessages(streamOCIDToRetry, streamAdminClient, readPartition, readAfterOffset,
+						errorStreamMapping, noOfMessagesToProcess);
 
-				// Get the Stream to retry
-				Stream retryStream = getStream(streamOCIDToRetry, streamAdminClient);
-
-				StreamClient retryStreamClient = StreamClient.builder().stream(retryStream).build(provider);
-
-				// Get the cursor
-
-				String cursor = getStreamCursor(retryStreamClient, readPartition, streamOCIDToRetry, readAfterOffset);
-
-				// Read messages
-
-				processStatus = readMessagesFromStream(cursor, retryStreamClient, streamOCIDToRetry, errorStreamMapping,
-						readAfterOffset, noOfMessagesToProcess, streamAdminClient);
 			} catch (BmcException e) {
 				LOGGER.severe(e.getLocalizedMessage());
 				httpGatewayContext.setStatusCode(e.getStatusCode());
@@ -148,10 +180,63 @@ public class RetryFunction {
 		} catch (JsonProcessingException jsonex) {
 			LOGGER.severe(jsonex.getLocalizedMessage());
 			httpGatewayContext.setStatusCode(500);
-			return "Error occured in processing the payload ";
+			return "Error occured in processing the payload " + jsonex.getLocalizedMessage();
 		}
 
-		return processStatus;
+	}
+
+	/**
+	 * @param streamOCID
+	 * @param streamAdminClient
+	 * @return
+	 * 
+	 *         This method checks if a stream exist
+	 */
+	private boolean streamExist(String streamOCID, StreamAdminClient streamAdminClient) {
+
+		ListStreamsRequest listRequest = ListStreamsRequest.builder().compartmentId(STREAM_COMPARTMENT_OCID)
+				.id(streamOCID).lifecycleState(LifecycleState.Active).build();
+
+		ListStreamsResponse listResponse = streamAdminClient.listStreams(listRequest);
+
+		return !listResponse.getItems().isEmpty();
+
+	}
+
+	/**
+	 * @param streamOCIDToRetry
+	 * @param streamAdminClient
+	 * @param readPartition
+	 * @param readAfterOffset
+	 * @param errorStreamMapping
+	 * @param noOfMessagesToProcess
+	 * @return String
+	 * 
+	 *         This method gets the Stream from OCID, creates a Stream cursor and
+	 *         then reads and processes individual messages. It returns the process
+	 *         status, showing the no. of successfully processed messages, failed
+	 *         messages and if end of stream is reached, returns endOfStream as
+	 *         true.
+	 */
+	private String processStreamMessages(String streamOCIDToRetry, StreamAdminClient streamAdminClient,
+			String readPartition, long readAfterOffset, Map<String, String> errorStreamMapping,
+			int noOfMessagesToProcess) {
+
+		// Get the Stream to retry
+		Stream retryStream = getStream(streamOCIDToRetry, streamAdminClient);
+
+		// Get the streamClient
+
+		StreamClient retryStreamClient = StreamClient.builder().stream(retryStream).build(provider);
+
+		// Get the cursor
+
+		String cursor = getStreamCursor(retryStreamClient, readPartition, streamOCIDToRetry, readAfterOffset);
+
+		// Read and process messages in stream using cursor
+
+		return readMessagesFromStream(cursor, retryStreamClient, streamOCIDToRetry, errorStreamMapping,
+				noOfMessagesToProcess, streamAdminClient);
 	}
 
 	/**
@@ -213,13 +298,12 @@ public class RetryFunction {
 	 *         This method is used to read the messages from stream
 	 */
 	private String readMessagesFromStream(String cursor, StreamClient streamClient, String streamOCIDToRetry,
-			Map<String, String> errorStreamMapping, int readAfterOffset, int noOfMessagesToProcess,
-			StreamAdminClient streamAdminClient) {
+			Map<String, String> errorStreamMapping, int noOfMessagesToProcess, StreamAdminClient streamAdminClient) {
 
 		long lastReadOffset = 0;
-		String returnMessage = "";
+		String endOfStreamMessage = "";
 		GetMessagesRequest getRequest = GetMessagesRequest.builder().streamId(streamOCIDToRetry).cursor(cursor)
-				.limit(noOfMessagesToProcess).build();
+				.limit(noOfMessagesToProcess + 1).build();
 
 		GetMessagesResponse getResponse = streamClient.getMessages(getRequest);
 		List<Message> responseItems = getResponse.getItems();
@@ -231,9 +315,9 @@ public class RetryFunction {
 			return "{\"endOfStream\": true}";
 		}
 
-		if (responseItems.size() <= noOfMessagesToProcess) {
+		if (responseItems.size() < noOfMessagesToProcess) {
 
-			returnMessage = ",\"endOfStream\": true";
+			endOfStreamMessage = ",\"endOfStream\": true";
 		}
 
 		// process the messages
@@ -254,14 +338,14 @@ public class RetryFunction {
 					streamKey = "";
 				}
 
-				processMessage(streamMessage, streamKey, errorStreamMapping, streamAdminClient);
+				executeMessage(streamMessage, streamKey, errorStreamMapping, streamAdminClient);
 
 				successMessages = successMessages + 1;
 
-				LOGGER.info("Processed message at offset" + lastReadOffset);
 			} catch (Exception ex) {
+				LOGGER.log(Level.SEVERE, "Retry Failed due to Exception in processing message. {0}",
+						ex.getLocalizedMessage());
 
-				LOGGER.severe("Retry Failed due to Exception in processing message " + ex.getLocalizedMessage());
 				populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf("unexpectedError")),
 						streamAdminClient);
 				// Return the offset upto which messages were read
@@ -270,32 +354,14 @@ public class RetryFunction {
 			}
 			lastReadOffset = message.getOffset();
 
+			LOGGER.log(Level.INFO, "Read message at offset {0}", lastReadOffset);
+
 		}
 
-		return "{\"lastReadOffset\":" + lastReadOffset + " ,\"processedmessages\":" + successMessages
-				+ ",\"failedMessages\":" + failedMessages + returnMessage + "}";
+		return new StringBuilder("{\"lastReadOffset\":").append(lastReadOffset).append(" ,\"processedmessages\":")
+				.append(successMessages).append(",\"failedMessages\":").append(failedMessages)
+				.append(endOfStreamMessage).append("}").toString();
 
-	}
-
-	/**
-	 * @param streamOCID
-	 * @param streamAdminClient
-	 * @return
-	 * 
-	 *         This method checks if a stream exist
-	 */
-	private boolean streamExist(String streamOCID, StreamAdminClient streamAdminClient) {
-
-		ListStreamsRequest listRequest = ListStreamsRequest.builder().compartmentId(STREAM_COMPARTMENT_OCID)
-				.id(streamOCID).lifecycleState(LifecycleState.Active).build();
-
-		ListStreamsResponse listResponse = streamAdminClient.listStreams(listRequest);
-
-		if (listResponse.getItems().isEmpty()) {
-
-			return false;
-		}
-		return true;
 	}
 
 	/**
@@ -303,16 +369,24 @@ public class RetryFunction {
 	 * @param streamKey
 	 * @param errorStreamMapping
 	 * @param StreamAdminClient
+	 * @throws InterruptedException
+	 * @throws IOException
+	 * @throws
 	 * @throws Exception
 	 * 
-	 *                   This method parses the incoming message and processes it.
+	 *                              This method parses message and processes it.
 	 * 
 	 */
-	private void processMessage(String streamMessage, String streamKey, Map<String, String> errorStreamMapping,
-			StreamAdminClient streamAdminClient) throws Exception {
+	private void executeMessage(String streamMessage, String streamKey, Map<String, String> errorStreamMapping,
+			StreamAdminClient streamAdminClient) throws IOException, InterruptedException {
 
-		String targetRestApiPayload = null;
 		HttpClient httpClient = HttpClient.newHttpClient();
+		String targetRestApiPayload = "";
+		String vaultSecretName = "";
+		String targetRestApiOperation = "";
+		String targetRestApi = "";
+		StringBuilder failureMessage = new StringBuilder("");
+		boolean processingFailed = false;
 
 		HttpRequest request = null;
 		int responseStatusCode;
@@ -321,11 +395,43 @@ public class RetryFunction {
 		JsonNode jsonNode = objectMapper.readTree(streamMessage);
 
 		// parse the stream message
-		String targetRestApi = jsonNode.get("targetRestApi").asText();
-		String targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
-		String vaultSecretName = jsonNode.get("vaultSecretName").asText();
+		if (jsonNode.has("vaultSecretName")) {
 
-		targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
+			vaultSecretName = jsonNode.get("vaultSecretName").asText();
+		}
+
+		if (jsonNode.get("targetRestApi") != null) {
+			targetRestApi = jsonNode.get("targetRestApi").asText();
+		} else {
+			processingFailed = true;
+			failureMessage = new StringBuilder(
+					"Message could not be processed as targetRestApi node is not found in payload.");
+		}
+		if (jsonNode.has("targetRestApiOperation")) {
+
+			targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
+			if (Arrays.stream(OPERATIONS).noneMatch(targetRestApiOperation::equals)) {
+				processingFailed = true;
+				failureMessage.append(
+						" Message could not be processed as targetRestApiOperation node doesnt contain PUT,POST or DELETE.");
+			}
+
+		} else {
+			processingFailed = true;
+			failureMessage
+					.append(" Message could not be processed as targetRestApiOperation node is not found in payload.");
+		}
+
+		if (jsonNode.get("targetRestApiPayload") != null) {
+			targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
+		}
+		if (processingFailed) {
+			LOGGER.log(Level.SEVERE, failureMessage.toString());
+			populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(DEFAULT_ERROR_STREAM_OCID),
+					streamAdminClient);
+			return;
+
+		}
 		// Get the targetRestApiHeaders section of the json payload
 		JsonNode headersNode = jsonNode.get("targetRestApiHeaders");
 		Map<String, String> httpHeaders = new HashMap<>();
@@ -364,10 +470,8 @@ public class RetryFunction {
 		}
 
 		default:
-
-			throw new Exception("Unhandled operation in targetRestApiOperation node in the message ");
+			LOGGER.log(Level.SEVERE, "No processing action taken");
 		}
-
 		HttpResponse<InputStream> response = null;
 
 		response = httpClient.send(request, BodyHandlers.ofInputStream());
@@ -403,14 +507,17 @@ public class RetryFunction {
 	 */
 	private HttpRequest constructHttpRequest(Builder builder, Map<String, String> httpHeaders, String vaultSecretName) {
 
-		String authorizationHeaderName = "Authorization";
-		// Read the Vault to get the auth token
-		String authToken = getSecretFromVault(vaultSecretName);
-		// add targetRestApiHeaders to the request
+		if (!vaultSecretName.equals("")) {
+			String authorizationHeaderName = "Authorization";
+			// Read the Vault to get the auth token
+			String authToken = getSecretFromVault(vaultSecretName);
+			// add targetRestApiHeaders to the request
+			// add authorization token to the request
+			builder.header(authorizationHeaderName, authToken);
+		}
 
 		httpHeaders.forEach((k, v) -> builder.header(k, v));
-		// add authorization token to the request
-		builder.header(authorizationHeaderName, authToken);
+
 		return builder.build();
 
 	}
@@ -470,11 +577,15 @@ public class RetryFunction {
 		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
 			if (entry.getError() != null) {
 
-				LOGGER.severe("Put message error " + entry.getErrorMessage() + " in " + errorStreamOCID);
+				LOGGER.log(Level.SEVERE, String.format("Put message error  %s, in stream with OCID %s.",
+						entry.getErrorMessage(), errorStreamOCID));
+
 			} else {
 
-				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition()
-						+ " in ocid " + errorStreamOCID);
+				LOGGER.log(Level.INFO,
+						String.format("Message pushed to offset %s, in partition  %s in stream with OCID %s",
+								entry.getOffset(), entry.getPartition(), errorStreamOCID));
+
 			}
 
 		}

@@ -7,6 +7,7 @@
 
 package com.example.fn;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -19,6 +20,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.ws.rs.core.Response.Status.Family;
@@ -60,6 +62,9 @@ public class ReadDataStreamFunction {
 			.get("internalserver_error_stream_ocid");
 	private static final String DEFAULT_ERROR_STREAM_OCID = System.getenv().get("default_error_stream_ocid");
 	private static final String STREAM_COMPARTMENT_OCID = System.getenv().get("stream_compartment_ocid");
+	private static final String[] OPERATIONS = new String[] { "PUT", "POST", "DELETE" };
+	private static final List<String> STREAM_OCIDS = List.of(UNRECOVERABLE_ERROR_STREAM_OCID,
+			SERVICEUNAVAILABLE_ERROR_STREAM_OCID, INTERNALSERVER_ERROR_STREAM_OCID, DEFAULT_ERROR_STREAM_OCID);
 
 	/**
 	 * @param incomingMessage
@@ -68,6 +73,8 @@ public class ReadDataStreamFunction {
 	 * 
 	 * 
 	 *         This is the entry point of the function execution.
+	 * @throws InterruptedException
+	 * @throws IOException
 	 */
 	public String handleRequest(String incomingMessage, HTTPGatewayContext httpGatewayContext) {
 
@@ -128,21 +135,21 @@ public class ReadDataStreamFunction {
 
 		boolean streamsExist = true;
 
-		List<String> streamOCIDList = List.of(UNRECOVERABLE_ERROR_STREAM_OCID, SERVICEUNAVAILABLE_ERROR_STREAM_OCID,
-				INTERNALSERVER_ERROR_STREAM_OCID, DEFAULT_ERROR_STREAM_OCID);
+		for (int i = 0; i < STREAM_OCIDS.size(); i++) {
 
-		for (int i = 0; i < streamOCIDList.size(); i++) {
-			streamsExist = true;
 			ListStreamsRequest listRequest = ListStreamsRequest.builder().compartmentId(STREAM_COMPARTMENT_OCID)
-					.id(streamOCIDList.get(i)).lifecycleState(LifecycleState.Active).build();
+					.id(STREAM_OCIDS.get(i)).lifecycleState(LifecycleState.Active).build();
 
 			ListStreamsResponse listResponse = streamAdminClient.listStreams(listRequest);
 
 			if (listResponse.getItems().isEmpty()) {
 
 				streamsExist = false;
-				LOGGER.severe("Processing Failed as streamOCID " + streamOCIDList.get(i)
-						+ " in application configurations  doesn't exist");
+
+				LOGGER.log(Level.SEVERE,
+						"Processing failed as stream OCID {0} in application configurations doesnt exist.",
+						STREAM_OCIDS.get(i));
+
 				break;
 			}
 
@@ -157,15 +164,21 @@ public class ReadDataStreamFunction {
 	 * @param streamKey
 	 * @param StreamAdminClient
 	 * 
-	 *                          This method parses the incoming message and
-	 *                          processes it based on the targetRestApiOperation
-	 *                          defined in the message
+	 * @throws InterruptedException
+	 * @throws IOException          This method parses the incoming message and
+	 *                              processes it based on the targetRestApiOperation
+	 *                              defined in the message
 	 */
 	private void processMessage(String streamMessage, String streamKey, StreamAdminClient streamAdminClient)
-			throws Exception {
+			throws IOException, InterruptedException {
 		HttpClient httpClient = HttpClient.newHttpClient();
 
 		String targetRestApiPayload = "";
+		String vaultSecretName = "";
+		String targetRestApiOperation = "";
+		String targetRestApi = "";
+		StringBuilder failureMessage = new StringBuilder("");
+		boolean processingFailed = false;
 
 		int responseStatusCode = 0;
 		ObjectMapper objectMapper = new ObjectMapper();
@@ -175,12 +188,41 @@ public class ReadDataStreamFunction {
 		jsonNode = objectMapper.readTree(streamMessage);
 		// parse the incoming message
 
-		String vaultSecretName = jsonNode.get("vaultSecretName").asText();
-		String targetRestApi = jsonNode.get("targetRestApi").asText();
-		String targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
+		if (jsonNode.has("vaultSecretName")) {
+
+			vaultSecretName = jsonNode.get("vaultSecretName").asText();
+		}
+
+		if (jsonNode.get("targetRestApi") != null) {
+			targetRestApi = jsonNode.get("targetRestApi").asText();
+		} else {
+			processingFailed = true;
+			failureMessage = new StringBuilder(
+					"Message could not be processed as targetRestApi node is not found in payload.");
+		}
+		if (jsonNode.has("targetRestApiOperation")) {
+
+			targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
+			if (Arrays.stream(OPERATIONS).noneMatch(targetRestApiOperation::equals)) {
+				processingFailed = true;
+				failureMessage.append(
+						" Message could not be processed as targetRestApiOperation node doesnt contain PUT,POST or DELETE.");
+			}
+
+		} else {
+			processingFailed = true;
+			failureMessage
+					.append(" Message could not be processed as targetRestApiOperation node is not found in payload.");
+		}
 
 		if (jsonNode.get("targetRestApiPayload") != null) {
 			targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
+		}
+		if (processingFailed) {
+			LOGGER.log(Level.SEVERE, failureMessage.toString());
+			populateErrorStream(streamMessage, streamKey, UNRECOVERABLE_ERROR_STREAM_OCID, streamAdminClient);
+			return;
+
 		}
 		// Get the targetRestApiHeaders section of the json payload
 		JsonNode headersNode = jsonNode.get("targetRestApiHeaders");
@@ -219,8 +261,7 @@ public class ReadDataStreamFunction {
 			break;
 		}
 		default:
-
-			throw new Exception("Unhandled operation in targetRestApiOperation node in the message ");
+			LOGGER.log(Level.SEVERE, "No processing action taken");
 		}
 
 		// make the http request call
@@ -271,14 +312,17 @@ public class ReadDataStreamFunction {
 	 */
 	private HttpRequest constructHttpRequest(Builder builder, Map<String, String> httpHeaders, String vaultSecretName) {
 
-		String authorizationHeaderName = "Authorization";
-		// Read the Vault to get the auth token
-		String authToken = getSecretFromVault(vaultSecretName);
+		if (!vaultSecretName.equals("")) {
+			String authorizationHeaderName = "Authorization";
+			// Read the Vault to get the auth token
+			String authToken = getSecretFromVault(vaultSecretName);
+			builder.header(authorizationHeaderName, authToken);
+		}
 		// add targetRestApiHeaders to the request
 
 		httpHeaders.forEach((k, v) -> builder.header(k, v));
 		// add authorization token to the request
-		builder.header(authorizationHeaderName, authToken);
+
 		return builder.build();
 
 	}
@@ -352,11 +396,15 @@ public class ReadDataStreamFunction {
 		for (PutMessagesResultEntry entry : putResponse.getPutMessagesResult().getEntries()) {
 			if (entry.getError() != null) {
 
-				LOGGER.severe("Put message error " + entry.getErrorMessage() + " in " + errorStreamOCID);
+				LOGGER.log(Level.SEVERE, String.format("Put message error  %s, in stream with OCID %s.",
+						entry.getErrorMessage(), errorStreamOCID));
+
 			} else {
 
-				LOGGER.info("Message pushed to offset " + entry.getOffset() + " in partition " + entry.getPartition()
-						+ " in ocid " + errorStreamOCID);
+				LOGGER.log(Level.INFO,
+						String.format("Message pushed to offset %s, in partition  %s in stream with OCID %s",
+								entry.getOffset(), entry.getPartition(), errorStreamOCID));
+
 			}
 
 		}

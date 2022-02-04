@@ -58,7 +58,9 @@ public class PopulateDataStreamFunction {
 	 */
 	public String handleRequest(HTTPGatewayContext httpGatewayContext, String requestBody) {
 
-		String streamKey, streamMessage, vaultSecretName = "";
+		String streamKey = "";
+		String streamMessage = "";
+		String vaultSecretName = "";
 
 		QueryParameters queryparams = httpGatewayContext.getQueryParameters();
 		// Read the request header to get the authorization header value.
