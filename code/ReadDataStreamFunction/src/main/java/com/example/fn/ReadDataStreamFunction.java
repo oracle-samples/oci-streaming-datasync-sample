@@ -186,6 +186,7 @@ public class ReadDataStreamFunction {
 		JsonNode jsonNode = null;
 
 		jsonNode = objectMapper.readTree(streamMessage);
+
 		// parse the incoming message
 
 		if (jsonNode.has("vaultSecretName")) {

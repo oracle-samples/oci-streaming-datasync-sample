@@ -85,86 +85,77 @@ public class RetryFunction {
 		int noOfMessagesToProcess = 0;
 		int readAfterOffset = 0;
 		String streamOCIDToRetry = "";
-		StringBuilder processStatus = new StringBuilder("Message could not be processed.");
-		boolean processingFailed = false;
 
 		try {
 			JsonNode jsonNode = mapper.readTree(requestBody);
 
-			if (jsonNode.has("streamOCIDToRetry")) {
-				streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
+			String[] keys = { "streamOCIDToRetry", "readAfterOffset", "readPartition", "noOfMessagesToProcess",
+					"errormapping" };
 
-				// check if the stream exists
-				if (!streamExist(streamOCIDToRetry, streamAdminClient)) {
-					LOGGER.log(Level.SEVERE,
-							"Processing Failed.  Please correct the streamOCIDToRetry with correct stream OCID. {0}  doesnt exist",
-							streamOCIDToRetry);
+			for (String key : keys) {
+				if (!jsonNode.has(key)) {
+
+					LOGGER.log(Level.SEVERE, "{0} doesnt exist.", key);
 
 					httpGatewayContext.setStatusCode(500);
-					return streamOCIDToRetry
-							+ " doesnt exist. Please correct the streamOCIDToRetry  with correct stream OCID";
-
+					return key + " doesnt exist.";
 				}
-			} else {
-				processingFailed = true;
-				processStatus.append(" streamOCIDToRetry ");
 
 			}
 
-			if (jsonNode.has("readAfterOffset")) {
-				readAfterOffset = jsonNode.path("readAfterOffset").asInt();
-			} else {
-				processingFailed = true;
-				processStatus.append(" readAfterOffset ");
-			}
+			streamOCIDToRetry = jsonNode.path("streamOCIDToRetry").asText();
 
-			if (jsonNode.has("readPartition")) {
-				readPartition = jsonNode.path("readPartition").asText();
-			} else {
-				processingFailed = true;
-				processStatus.append(" readPartition ");
-			}
+			// check if the stream exists
+			if (!streamExist(streamOCIDToRetry, streamAdminClient)) {
+				LOGGER.log(Level.SEVERE,
+						"Processing Failed.  Correct the streamOCIDToRetry with correct stream OCID. {0}  doesnt exist",
+						streamOCIDToRetry);
 
-			if (jsonNode.has("noOfMessagesToProcess")) {
-				noOfMessagesToProcess = jsonNode.path("noOfMessagesToProcess").asInt();
-			} else {
-				processingFailed = true;
-				processStatus.append(" noOfMessagesToProcess ");
-			}
-
-			if (jsonNode.has("errormapping")) {
-				// Get the error mapping nodes to get the error code and error stream ocid
-				// mappping to use
-
-				JsonNode errorMMappingNodes = jsonNode.get("errormapping");
-
-				for (int i = 0; i < errorMMappingNodes.size(); i++) {
-					JsonNode node = errorMMappingNodes.get(i);
-					String streamOCID = node.get("stream").asText();
-
-					// check if the error stream OCIDs in the payload are correct
-					if (!streamExist(streamOCID, streamAdminClient)) {
-						LOGGER.log(Level.SEVERE,
-								"Processing Failed.  Please correct the errormapping section with correct stream OCID. {0}  doesnt exist",
-								streamOCID);
-
-						httpGatewayContext.setStatusCode(500);
-						return streamOCID
-								+ " doesnt exist. Please correct the errormapping section with correct stream OCID";
-
-					}
-					// store in a map
-					errorStreamMapping.put(node.get("responsecode").asText(), streamOCID);
-
-				}
-			} else {
-				processingFailed = true;
-				processStatus.append(" errormapping ");
-			}
-			if (processingFailed) {
-				LOGGER.severe(processStatus.toString());
 				httpGatewayContext.setStatusCode(500);
-				return processStatus.append(" not found in the payload").toString();
+				return streamOCIDToRetry + " doesnt exist. Correct the streamOCIDToRetry  with correct stream OCID";
+
+			}
+
+			readAfterOffset = jsonNode.path("readAfterOffset").asInt();
+
+			readPartition = jsonNode.path("readPartition").asText();
+
+			noOfMessagesToProcess = jsonNode.path("noOfMessagesToProcess").asInt();
+			if (noOfMessagesToProcess <= 0) {
+				LOGGER.log(Level.INFO, "Stopped Function execution as noOfMessagesToProcess <=0.");
+				return "Stopped Function execution as noOfMessagesToProcess <=0.";
+
+			}
+
+			if (!streamExist(DEFAULT_ERROR_STREAM_OCID, streamAdminClient)) {
+
+				LOGGER.log(Level.SEVERE, "Check DEFAULT_ERROR_STREAM_OCID value in Function Configurations.");
+				httpGatewayContext.setStatusCode(500);
+				return "Check DEFAULT_ERROR_STREAM_OCID value in Function Configurations.";
+			}
+
+			// Get the error mapping nodes to get the error code and error stream ocid
+			// mappping to use
+
+			JsonNode errorMMappingNodes = jsonNode.get("errormapping");
+
+			for (int i = 0; i < errorMMappingNodes.size(); i++) {
+				JsonNode node = errorMMappingNodes.get(i);
+				String streamOCID = node.get("stream").asText();
+
+				// check if the error stream OCIDs in the payload are correct
+				if (!streamExist(streamOCID, streamAdminClient)) {
+					LOGGER.log(Level.SEVERE,
+							"Processing Failed.  Correct the errormapping section with correct stream OCID. {0}  doesnt exist",
+							streamOCID);
+
+					httpGatewayContext.setStatusCode(500);
+					return streamOCID + " doesnt exist. Correct the errormapping section with correct stream OCID";
+
+				}
+				// store in a map
+				errorStreamMapping.put(node.get("responsecode").asText(), streamOCID);
+
 			}
 
 			try {
@@ -188,7 +179,7 @@ public class RetryFunction {
 	/**
 	 * @param streamOCID
 	 * @param streamAdminClient
-	 * @return
+	 * @return boolean Returns true if stream exist, else returns false.
 	 * 
 	 *         This method checks if a stream exist
 	 */
@@ -210,7 +201,7 @@ public class RetryFunction {
 	 * @param readAfterOffset
 	 * @param errorStreamMapping
 	 * @param noOfMessagesToProcess
-	 * @return String
+	 * @return String Returns the no. of processed and failed messages.
 	 * 
 	 *         This method gets the Stream from OCID, creates a Stream cursor and
 	 *         then reads and processes individual messages. It returns the process
@@ -259,7 +250,7 @@ public class RetryFunction {
 	 * @param readPartition
 	 * @param streamOCIDToRetry
 	 * @param readAfterOffset
-	 * @return String
+	 * @return String Returns a Stream cursor
 	 * 
 	 *         This method creates a Stream message cursor using an
 	 *         AFTER_OFFSET/TRIM_HORIZON cursor type
@@ -293,7 +284,7 @@ public class RetryFunction {
 	 * @param readAfterOffset
 	 * @param noOfMessagesToProcess
 	 * @param StreamAdminClient
-	 * @return String
+	 * @return String Returns the no. of processed and failed messages.
 	 * 
 	 *         This method is used to read the messages from stream
 	 */
@@ -345,13 +336,15 @@ public class RetryFunction {
 			} catch (Exception ex) {
 				LOGGER.log(Level.SEVERE, "Retry Failed due to Exception in processing message. {0}",
 						ex.getLocalizedMessage());
+				ex.printStackTrace();
 
 				populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(String.valueOf("unexpectedError")),
 						streamAdminClient);
-				// Return the offset upto which messages were read
+
 				failedMessages = failedMessages + 1;
 
 			}
+			// Return the offset upto which messages were read
 			lastReadOffset = message.getOffset();
 
 			LOGGER.log(Level.INFO, "Read message at offset {0}", lastReadOffset);
@@ -371,10 +364,9 @@ public class RetryFunction {
 	 * @param StreamAdminClient
 	 * @throws InterruptedException
 	 * @throws IOException
-	 * @throws
-	 * @throws Exception
 	 * 
-	 *                              This method parses message and processes it.
+	 *                              This method parses target api payload and
+	 *                              processes it.
 	 * 
 	 */
 	private void executeMessage(String streamMessage, String streamKey, Map<String, String> errorStreamMapping,
@@ -386,7 +378,7 @@ public class RetryFunction {
 		String targetRestApiOperation = "";
 		String targetRestApi = "";
 		StringBuilder failureMessage = new StringBuilder("");
-		boolean processingFailed = false;
+		boolean targetApiCallFailed = false;
 
 		HttpRequest request = null;
 		int responseStatusCode;
@@ -403,32 +395,28 @@ public class RetryFunction {
 		if (jsonNode.get("targetRestApi") != null) {
 			targetRestApi = jsonNode.get("targetRestApi").asText();
 		} else {
-			processingFailed = true;
-			failureMessage = new StringBuilder(
-					"Message could not be processed as targetRestApi node is not found in payload.");
+			targetApiCallFailed = true;
+			failureMessage = new StringBuilder("targetRestApi node not found in payload. ");
 		}
 		if (jsonNode.has("targetRestApiOperation")) {
 
 			targetRestApiOperation = jsonNode.get("targetRestApiOperation").asText();
 			if (Arrays.stream(OPERATIONS).noneMatch(targetRestApiOperation::equals)) {
-				processingFailed = true;
-				failureMessage.append(
-						" Message could not be processed as targetRestApiOperation node doesnt contain PUT,POST or DELETE.");
+				targetApiCallFailed = true;
+				failureMessage.append("targetRestApiOperation node doesnt contain PUT,POST or DELETE.");
 			}
 
 		} else {
-			processingFailed = true;
-			failureMessage
-					.append(" Message could not be processed as targetRestApiOperation node is not found in payload.");
+			targetApiCallFailed = true;
+			failureMessage.append("  targetRestApiOperation node is not found in payload.");
 		}
 
 		if (jsonNode.get("targetRestApiPayload") != null) {
 			targetRestApiPayload = jsonNode.get("targetRestApiPayload").toString();
 		}
-		if (processingFailed) {
+		if (targetApiCallFailed) {
 			LOGGER.log(Level.SEVERE, failureMessage.toString());
-			populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(DEFAULT_ERROR_STREAM_OCID),
-					streamAdminClient);
+			populateErrorStream(streamMessage, streamKey, DEFAULT_ERROR_STREAM_OCID, streamAdminClient);
 			return;
 
 		}
@@ -464,13 +452,13 @@ public class RetryFunction {
 
 		case "DELETE": {
 			Builder builder = HttpRequest.newBuilder().DELETE().uri(URI.create(targetRestApi));
-			// add targetRestApiHeaders to the request
+
 			request = constructHttpRequest(builder, httpHeaders, vaultSecretName);
 			break;
 		}
 
 		default:
-			LOGGER.log(Level.SEVERE, "No processing action taken");
+			LOGGER.log(Level.SEVERE, "Target API not processed.");
 		}
 		HttpResponse<InputStream> response = null;
 
@@ -490,8 +478,7 @@ public class RetryFunction {
 			} else {
 				// if there is no error stream defined for the REST response code, use the
 				// default
-				populateErrorStream(streamMessage, streamKey, errorStreamMapping.get(DEFAULT_ERROR_STREAM_OCID),
-						streamAdminClient);
+				populateErrorStream(streamMessage, streamKey, DEFAULT_ERROR_STREAM_OCID, streamAdminClient);
 			}
 		}
 
@@ -524,7 +511,7 @@ public class RetryFunction {
 
 	/**
 	 * @param vaultSecretName
-	 * @return String
+	 * @return String Returns the token stored in Vault
 	 * 
 	 *         This method is used to get the auth token from the vault using
 	 *         secretName
