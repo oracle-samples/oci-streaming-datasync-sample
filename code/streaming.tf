@@ -61,3 +61,14 @@ resource oci_streaming_stream export_DataSyncStream {
  
 }
 
+resource oci_streaming_stream export_InternalserverErrorStream {
+  compartment_id = var.compartment_ocid
+ 
+  freeform_tags = {
+  }
+  name               = "InternalserverErrorStream"
+  partitions         = "1"
+  retention_in_hours = "24"
+ 
+}
+

@@ -15,7 +15,6 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fnproject.fn.api.Headers;
-import com.fnproject.fn.api.QueryParameters;
 import com.fnproject.fn.api.httpgateway.HTTPGatewayContext;
 import com.oracle.bmc.auth.ResourcePrincipalAuthenticationDetailsProvider;
 import com.oracle.bmc.model.BmcException;
@@ -45,6 +44,7 @@ public class PopulateDataStreamFunction {
 	private static final String VAULT_OCID = System.getenv().get("vault_ocid");
 	private static final String VAULT_COMPARTMENT_OCID = System.getenv().get("vault_compartment_ocid");
 	private static final String VAULT_KEY_OCID = System.getenv().get("vault_key_ocid");
+	private static final String DATA_STREAM_OCID = System.getenv().get("data_stream_ocid");
 
 	/**
 	 * @param httpGatewayContext
@@ -62,19 +62,10 @@ public class PopulateDataStreamFunction {
 		String streamMessage = "";
 		String vaultSecretName = "";
 
-		QueryParameters queryparams = httpGatewayContext.getQueryParameters();
 		// Read the request header to get the authorization header value.
 		// This will be stored in a vault
 		Headers headers = httpGatewayContext.getHeaders();
 		Optional<String> authorizationHeaderOpt = headers.get("Authorization");
-		// This is the OCID of the stream to which data is populated.
-
-		Optional<String> streamOCID = queryparams.get("streamOCID");
-		if (!streamOCID.isPresent()) {
-			httpGatewayContext.setStatusCode(500);
-			return "Stream OCID not present in the query params";
-
-		}
 
 		ObjectMapper objectMapper = new ObjectMapper();
 		try {
@@ -101,7 +92,7 @@ public class PopulateDataStreamFunction {
 
 			}
 
-			storeMessageinStream(streamMessage, streamOCID.get(), streamKey);
+			storeMessageinStream(streamMessage, DATA_STREAM_OCID, streamKey);
 
 		} catch (BmcException e) {
 			LOGGER.severe(e.getLocalizedMessage());
