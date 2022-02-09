@@ -101,7 +101,7 @@ A vault called, _DataSyncVault_ is used to store the auth tokens as secrets.
 Step 1.	Source application/s posts data to the REST API exposed by the API Gateway. The API gateway  has an API deployment that invokes the Function _PopulateDataStreamFunction_.
 
 The REST API call to API Gateway and sample json payload is given below. 
-https://[hostname]/stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
+https://[hostname]/stream/sync
 
 
 ```
@@ -110,7 +110,7 @@ https://[hostname]/stream/sync?streamOCID=ocid1.Stream.oc1.iad.a....
 	"streamMessage": {
 	   "vaultSecretName":"789",  
 	    
-		"targetRestApi": "https://g4kz1wyoyzrtvap-jsondb.adb.us-ashburn-1.oraclecloudapps.com/ords/admin/soda/latest/orders",
+		"targetRestApi": "https://g4kz1wyoyzrtvap-json......./....../latest/orders",
 		"targetRestApiOperation": "POST",
 		"targetRestApiPayload": {
 			"orderid": "18jan",
@@ -225,8 +225,8 @@ It also informs whether end of Stream has reached, so that further call for retr
 
 ### Running the sample
 
-1. To run the sample, get the API Gateway URL corresponding to _sync_ route. It will look like following, https://[host-name]/stream/sync?streamOCID=ocid1.stream.oc1......
-Get the OCID of the _DataSyncStream_ and pass it as the query param value of _streamOCID_.
+1. To run the sample, get the API Gateway URL corresponding to _sync_ route. It will look like following, https://[host-name]/stream/sync
+
 
 A sample json payload is given below. You can have POST, PUT and DELETE operatons. Change the _targetRESTApi_ and _targetRESTApiOperation_ values based on your target application.
 Any REST API headers should be passed as key, value pairs in _targetRestApiHeaders_.
