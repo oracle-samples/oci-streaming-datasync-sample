@@ -1,8 +1,8 @@
-//Copyright (c)  2022,  Oracle and/or its affiliates.
+// Copyright (c)  2022,  Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
-//This Function is used to populate the DataSyncStream . 
-//It is invoked when the Source Application/s post data to the REST API exposed using API Gateway.
+// This Function is used to populate the DataSyncStream . 
+// It is invoked when the Source Application/s post data to the REST API exposed using API Gateway.
 package com.example.fn;
 
 import java.util.Arrays;
